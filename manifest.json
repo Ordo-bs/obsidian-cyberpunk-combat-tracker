@@ -4,8 +4,7 @@
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
 	"description": "A comprehensive combat tracker for Cyberpunk characters, supporting multiple character types (Mooks, Drones, Robots, and Players) with detailed stat tracking, damage calculation, and initiative management.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"author": "Ordo-bs",
+	"authorUrl": "https://github.com/Ordo-bs",
 	"isDesktopOnly": false
 }
