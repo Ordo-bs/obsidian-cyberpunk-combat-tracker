@@ -1,9 +1,9 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "cyberpunk-stat-blocks",
+	"name": "Cyberpunk Combat Tracker",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
+	"description": "A comprehensive combat tracker for Cyberpunk characters, supporting multiple character types (Mooks, Drones, Robots, and Players) with detailed stat tracking, damage calculation, and initiative management.",
 	"author": "Obsidian",
 	"authorUrl": "https://obsidian.md",
 	"fundingUrl": "https://obsidian.md/pricing",

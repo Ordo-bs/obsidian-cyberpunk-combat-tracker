@@ -6,3 +6,456 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+.combat-tracker-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 8px;
+    scroll-behavior: smooth;
+}
+
+.combat-tracker-menu {
+    position: sticky;
+    top: 0;
+    padding: 8px 0;
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    z-index: 1;
+}
+
+.combat-tracker-btn {
+    flex: 1;
+    padding: 4px 8px;
+    background-color: var(--interactive-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    color: var(--text-normal);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.combat-tracker-btn:hover {
+    background-color: var(--interactive-hover);
+}
+
+.combat-tracker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    padding: 4px;
+    scroll-behavior: smooth;
+}
+
+.character-card {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+    scroll-margin-top: 60px; /* Accounts for sticky header */
+}
+
+.character-card.highlighted {
+    background-color: var(--background-secondary-alt);
+    border-color: var(--interactive-accent);
+}
+
+.character-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: center;
+}
+
+.character-header-main {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    min-width: 200px;
+    align-items: center;
+}
+
+.character-init {
+    width: 60px;
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 2px 4px;
+    color: var(--text-normal);
+    font-weight: 500;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.character-init:hover,
+.character-init:focus {
+    border-color: var(--background-modifier-border);
+    background-color: var(--background-primary);
+}
+
+.character-name {
+    flex: 1;
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 2px 4px;
+    color: var(--text-normal);
+    font-weight: 500;
+    min-width: 100px;
+}
+
+.character-name:hover,
+.character-name:focus {
+    border-color: var(--background-modifier-border);
+    background-color: var(--background-primary);
+}
+
+.character-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.action-btn {
+    padding: 4px;
+    background-color: var(--interactive-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    color: var(--text-normal);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Icon action buttons (edit, copy, delete) */
+.character-actions .action-btn {
+    width: 28px;
+    height: 28px;
+}
+
+/* Text action buttons (hit, reload) */
+.character-action-row .action-btn {
+    min-width: 50px;
+    padding: 4px 12px;
+    height: 28px;
+    flex-grow: 1;
+    max-width: 100px;
+}
+
+.action-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.action-btn:hover {
+    background-color: var(--interactive-hover);
+}
+
+.action-btn.delete-btn {
+    color: var(--text-error);
+}
+
+.action-btn.delete-btn:hover {
+    background-color: var(--text-error);
+    color: var(--background-primary);
+}
+
+.action-btn.copy-btn {
+    color: var(--text-accent);
+}
+
+.action-btn.copy-btn:hover {
+    background-color: var(--text-accent);
+    color: var(--background-primary);
+}
+
+.action-btn.edit-btn {
+    color: var(--text-success);
+}
+
+.action-btn.edit-btn:hover {
+    background-color: var(--text-success);
+    color: var(--background-primary);
+}
+
+.character-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: center;
+}
+
+.character-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.character-stat {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 4px;
+    background-color: var(--background-primary);
+    border-radius: 4px;
+    align-items: center;
+}
+
+.shots-buttons {
+    display: flex;
+    gap: 4px;
+    margin-left: 8px;
+}
+
+.shots-buttons .action-btn {
+    padding: 2px 4px;
+    min-width: 30px;
+    height: 20px;
+    font-size: 0.8em;
+}
+
+.character-notification {
+    color: var(--text-error);
+    font-size: 0.9em;
+    padding: 4px;
+    background-color: var(--background-primary);
+    border-radius: 4px;
+    margin-top: 8px;
+    text-align: center;
+}
+
+.expand-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+    margin-left: auto;
+}
+
+.expand-btn:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.character-expanded {
+    margin-top: 12px;
+}
+
+.character-expanded hr {
+    border: none;
+    height: 1px;
+    background-color: var(--background-modifier-border);
+    margin: 8px 0;
+}
+
+.character-expanded .character-stats {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+/* Edit View Styles */
+.character-edit-form {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.edit-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.edit-row label {
+    min-width: 120px;
+    color: var(--text-normal);
+}
+
+.edit-input {
+    flex: 1;
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: var(--text-normal);
+}
+
+.edit-select {
+    flex: 1;
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: var(--text-normal);
+}
+
+.edit-save-btn {
+    margin-top: 16px;
+    padding: 8px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.edit-save-btn:hover {
+    background-color: var(--interactive-accent-hover);
+}
+
+.stat-input {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-normal);
+    width: 60px;
+    padding: 2px 4px;
+    text-align: right;
+}
+
+.stat-input:hover,
+.stat-input:focus {
+    border-color: var(--background-modifier-border);
+    background-color: var(--background-primary);
+}
+
+@media (max-width: 600px) {
+    .character-init {
+        width: 50px;
+    }
+
+    .character-header-main {
+        min-width: 150px;
+    }
+
+    .character-name {
+        min-width: 80px;
+    }
+
+    .character-actions .action-btn {
+        width: 24px;
+        height: 24px;
+        padding: 2px;
+    }
+
+    .action-btn svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .character-action-row .action-btn {
+        min-width: 40px;
+        padding: 4px 8px;
+        height: 24px;
+        font-size: 0.9em;
+        flex-basis: calc(33.33% - 8px);
+        max-width: none;
+    }
+
+    .character-stats {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    }
+}
+
+@media (max-width: 350px) {
+    .character-header-main {
+        min-width: 100%;
+    }
+
+    .character-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .character-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .character-action-row .action-btn {
+        flex-basis: calc(50% - 8px);
+    }
+}
+
+/* Ribbon icon styles */
+.ribbon-combat-tracker {
+    opacity: 0.8;
+    width: 30px;
+    height: 30px;
+    color: var(--icon-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s ease-in-out;
+}
+
+.ribbon-combat-tracker:hover {
+    color: var(--text-accent);
+}
+
+.ribbon-combat-tracker svg {
+    width: 24px;
+    height: 24px;
+    stroke-width: 2;
+    stroke: currentColor;
+    fill: none;
+}
+
+.hit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+}
+
+.hit-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.hit-row label {
+    min-width: 100px;
+}
+
+.hit-input {
+    width: 60px;
+    padding: 4px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.hit-calculate-btn {
+    margin-top: 10px;
+    padding: 6px 12px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    align-self: flex-start;
+}
+
+.hit-calculate-btn:hover {
+    background-color: var(--interactive-accent-hover);
+}
+
+.hit-error {
+    color: var(--text-error);
+    font-size: 0.9em;
+    margin-top: 5px;
+    display: none;
+}
+
+.hit-error.error-message {
+    display: block;
+}
