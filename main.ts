@@ -1,12 +1,9 @@
-import { App, ItemView, Plugin, WorkspaceLeaf, addIcon, Notice, MarkdownPostProcessorContext } from 'obsidian';
+import { App, ItemView, Plugin, WorkspaceLeaf, addIcon, Notice, MarkdownPostProcessorContext, setIcon } from 'obsidian';
 
 const VIEW_TYPE_COMBAT_TRACKER = "cyberpunk-combat-tracker-view";
 
 // Add Lucide icons
 const swordsIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-swords"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M14.5 6.5 21 0v3l-6.5 6.5"/><path d="m4 14 6-6"/><path d="M4 14v3"/></svg>`;
-const arrowLeftIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>`;
-const arrowRightIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
-const plusIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus"><path d="M5 12h14"/><path d="M12 5v14"/></svg>`;
 const diceIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-dice-5"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M16 8h.01"/><path d="M8 8h.01"/><path d="M8 16h.01"/><path d="M16 16h.01"/><path d="M12 12h.01"/></svg>`;
 const editIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-edit"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
 const copyIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
@@ -486,9 +483,6 @@ export default class CyberpunkStatBlocks extends Plugin {
 	async onload() {
 		// Register custom icons
 		addIcon('swords', swordsIcon);
-		addIcon('arrow-left', arrowLeftIcon);
-		addIcon('arrow-right', arrowRightIcon);
-		addIcon('plus', plusIcon);
 		addIcon('dice', diceIcon);
 		addIcon('edit', editIcon);
 		addIcon('copy', copyIcon);
@@ -564,7 +558,7 @@ export default class CyberpunkStatBlocks extends Plugin {
 			});
 		});
 
-		// Add styles for the add button
+		// Add styles for the add button and icons
 		const style = document.createElement('style');
 		style.textContent = `
 			.cyberpunk-add-button {
@@ -588,7 +582,7 @@ export default class CyberpunkStatBlocks extends Plugin {
 	}
 
 	async onunload() {
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_COMBAT_TRACKER);
+		// Let Obsidian handle view cleanup
 	}
 
 	async activateView() {
@@ -1117,19 +1111,19 @@ class CombatTrackerView extends ItemView {
 		const menuEl = container.createEl("div", { cls: "combat-tracker-menu" });
 		
 		const prevBtn = menuEl.createEl("button", { cls: "combat-tracker-btn" });
-		prevBtn.innerHTML = arrowLeftIcon;
+		setIcon(prevBtn, "arrow-left");
 		prevBtn.addEventListener("click", () => this.handlePrevious());
 		
 		const nextBtn = menuEl.createEl("button", { cls: "combat-tracker-btn" });
-		nextBtn.innerHTML = arrowRightIcon;
+		setIcon(nextBtn, "arrow-right");
 		nextBtn.addEventListener("click", () => this.handleNext());
 		
 		const addBtn = menuEl.createEl("button", { cls: "combat-tracker-btn" });
-		addBtn.innerHTML = plusIcon;
+		setIcon(addBtn, "plus");
 		addBtn.addEventListener("click", () => this.handleAdd());
 		
 		const diceBtn = menuEl.createEl("button", { cls: "combat-tracker-btn" });
-		diceBtn.innerHTML = diceIcon;
+		setIcon(diceBtn, "dice-6");
 		diceBtn.addEventListener("click", () => this.handleDiceRoll());
 
 		// Create character list
@@ -1174,21 +1168,21 @@ class CombatTrackerView extends ItemView {
 				cls: "action-btn edit-btn",
 				attr: { title: "Edit" }
 			});
-			editBtn.innerHTML = editIcon;
+			setIcon(editBtn, "pencil");
 			editBtn.addEventListener("click", () => this.handleEdit(char));
 
 			const copyBtn = actionBtns.createEl("button", {
 				cls: "action-btn copy-btn",
 				attr: { title: "Copy" }
 			});
-			copyBtn.innerHTML = copyIcon;
+			setIcon(copyBtn, "documents");
 			copyBtn.addEventListener("click", () => this.handleCopy(char));
 
 			const deleteBtn = actionBtns.createEl("button", {
 				cls: "action-btn delete-btn",
 				attr: { title: "Delete" }
 			});
-			deleteBtn.innerHTML = trashIcon;
+			setIcon(deleteBtn, "trash-2");
 			deleteBtn.addEventListener("click", () => this.handleDelete(index));
 
 			if (char.type === 'mook') {
