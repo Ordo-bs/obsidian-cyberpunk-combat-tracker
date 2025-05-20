@@ -100,7 +100,10 @@ export class CombatTrackerView extends ItemView {
     }
 
     async onOpen(): Promise<void> {
-        // This method is intentionally left blank or can be used for setup
+        const container = this.containerEl.children[1];
+        container.empty();
+        container.createEl("div", { cls: "combat-tracker-container" });
+        this.render();
     }
 
     async onClose(): Promise<void> {
@@ -344,15 +347,688 @@ export class CombatTrackerView extends ItemView {
     }
 
     private handleHitCalculation(index: number, locationRoll: number, damage: number, isFace: boolean) {
-        // ... (copy the full method body from main.ts)
+        const char = this.characters[index];
+        
+        if (char.type === 'drone') {
+            // Drone hit calculation
+            const spValue = char.sp;
+            if (spValue === undefined) return;
+
+            // Reduce damage by SP
+            let finalDamage = Math.max(0, damage - spValue);
+            
+            // If damage equals or exceeds SP, reduce SP by 1
+            if (damage >= spValue) {
+                char.sp = Math.max(0, spValue - 1);
+            }
+
+            // Update DMG Taken
+            if (char.dmgTaken !== undefined) {
+                char.dmgTaken += finalDamage;
+            }
+
+            // Update condition based on damage
+            if (char.sdp !== undefined) {
+                char.condition = getDroneCondition(char.dmgTaken || 0, char.sdp);
+            }
+
+            // Close hit section
+            char.hitExpanded = false;
+            this.render();
+            return;
+        } else if (char.type === 'robot') {
+            // Get hit location
+            let hitLocation = getHitLocation(locationRoll);
+            let dmgLocation: keyof Character;
+            
+            // Map SP location to corresponding DMG Taken location
+            switch (hitLocation) {
+                case 'headSp':
+                    dmgLocation = 'headDmgTaken';
+                    break;
+                case 'torsoSp':
+                    dmgLocation = 'torsoDmgTaken';
+                    break;
+                case 'rightArmSp':
+                    dmgLocation = 'rightArmDmgTaken';
+                    break;
+                case 'leftArmSp':
+                    dmgLocation = 'leftArmDmgTaken';
+                    break;
+                case 'rightLegSp':
+                    dmgLocation = 'rightLegDmgTaken';
+                    break;
+                case 'leftLegSp':
+                    dmgLocation = 'leftLegDmgTaken';
+                    break;
+                default:
+                    return;
+            }
+            
+            // Get the SP value for the hit location (default to 12 if undefined)
+            const spValue = char[hitLocation] as number ?? 12;
+            
+            // Reduce damage by SP (no BTM reduction for robots)
+            let finalDamage = Math.max(0, damage - spValue);
+            
+            // If damage equals or exceeds SP, reduce SP by 1
+            if (damage >= spValue) {
+                (char[hitLocation] as number) = Math.max(0, spValue - 1);
+            }
+            
+            // Update the corresponding DMG Taken value
+            if (char[dmgLocation] !== undefined) {
+                (char[dmgLocation] as number) += finalDamage;
+                
+                // Get the part name from the location
+                const partName = hitLocation.replace('Sp', '').split(/(?=[A-Z])/).join('').toLowerCase();
+                
+                // Check for status updates
+                const status = getRobotPartStatus((char[dmgLocation] as number), partName);
+                
+                // Update notifications
+                if (status) {
+                    // Initialize notifications array if it doesn't exist
+                    if (!char.notifications) {
+                        char.notifications = [];
+                    }
+                    
+                    // Remove any existing notifications for this part
+                    char.notifications = char.notifications.filter(n => !n.toLowerCase().includes(partName));
+                    
+                    // Add the new notification
+                    char.notifications.push(status);
+                }
+            }
+            
+            // Close hit section
+            char.hitExpanded = false;
+            this.render();
+            return;
+        }
+        
+        // Original mook hit calculation
+        // Step 1: Get hit location
+        let hitLocation = getHitLocation(locationRoll);
+        
+        // Step 2: Check for face hit
+        if (hitLocation === "headSp" && isFace) {
+            hitLocation = "faceSp";
+        }
+        
+        // Get the SP value for the hit location
+        const spValue = char[hitLocation] as number;
+        if (spValue === undefined) return;
+        
+        // Step 3: Reduce damage by SP
+        let finalDamage = damage - spValue;
+        
+        // Step 4: Reduce SP by 1 if damage equals or exceeds SP
+        if (damage >= spValue) {
+            (char[hitLocation] as number) = Math.max(0, spValue - 1);
+        }
+        
+        // If damage is reduced to 0 by SP, close hit section and return
+        // Note: we check for finalDamage <= 0 here, before BTM is applied
+        if (finalDamage <= 0) {
+            char.hitExpanded = false;
+            this.render();
+            return;
+        }
+        
+        // Step 5: Double damage for head hits
+        if (hitLocation === "headSp" || hitLocation === "faceSp") {
+            finalDamage *= 2;
+        }
+        
+        // Step 6: Add BTM
+        if (char.btm !== undefined) {
+            finalDamage += char.btm;
+        }
+        
+        // Step 7: Minimum damage is 1 (only if damage wasn't reduced to 0 by SP)
+        finalDamage = Math.max(1, finalDamage);
+        
+        // Step 8: Update Last DMG and DMG Taken
+        char.lastDmg = finalDamage;
+        if (char.dmgTaken !== undefined) {
+            char.dmgTaken += finalDamage;
+        }
+        
+        // Step 9: Close hit section
+        char.hitExpanded = false;
+        
+        // Step 10: Update notification and handle special cases
+        if (finalDamage >= 8) {
+            if (hitLocation === "headSp" || hitLocation === "faceSp") {
+                char.notification = "Dead!";
+                // Set DMG Taken to 99 when notification is "Dead!"
+                char.dmgTaken = 99;
+            } else {
+                char.notification = "Dismemberment!";
+            }
+        } else {
+            const newWoundState = getWoundStateFromDmg(char.dmgTaken || 0);
+            if (["Light", "Serious", "Critical"].includes(newWoundState)) {
+                char.notification = "Roll Stun Save";
+            } else {
+                char.notification = "Roll Death Save";
+            }
+        }
+        
+        // Update wound state and penalties
+        this.handleDmgChange(index, (char.dmgTaken || 0).toString());
     }
 
     private render(): void {
-        // ... (copy the full method body from main.ts)
+        const container = this.containerEl.querySelector(".combat-tracker-container");
+        if (!container) return;
+        
+        container.empty();
+
+        // Create sticky menu
+        const menuEl = container.createEl("div", { cls: "combat-tracker-menu" });
+        
+        const prevBtn = menuEl.createEl("button", { cls: "combat-tracker-btn" });
+        setIcon(prevBtn, "arrow-left");
+        prevBtn.addEventListener("click", () => this.handlePrevious());
+        
+        const nextBtn = menuEl.createEl("button", { cls: "combat-tracker-btn" });
+        setIcon(nextBtn, "arrow-right");
+        nextBtn.addEventListener("click", () => this.handleNext());
+        
+        const addBtn = menuEl.createEl("button", { cls: "combat-tracker-btn" });
+        setIcon(addBtn, "plus");
+        addBtn.addEventListener("click", () => this.handleAdd());
+        
+        const diceBtn = menuEl.createEl("button", { cls: "combat-tracker-btn" });
+        setIcon(diceBtn, "dice-6");
+        diceBtn.addEventListener("click", () => this.handleDiceRoll());
+
+        // Create character list
+        const listEl = container.createEl("div", { cls: "combat-tracker-list" });
+
+        this.characters.forEach((char, index) => {
+            const cardEl = listEl.createEl("div", {
+                cls: `character-card${char.isHighlighted ? " highlighted" : ""}`
+            });
+            
+            const headerEl = cardEl.createEl("div", { cls: "character-header" });
+            
+            // Init and name container
+            const headerMainEl = headerEl.createEl("div", { cls: "character-header-main" });
+            
+            // Init input
+            const initInput = headerMainEl.createEl("input", {
+                cls: "character-init",
+                attr: {
+                    type: "number",
+                    value: char.init.toString(),
+                    min: "0",
+                    step: "1"
+                }
+            });
+            initInput.addEventListener("change", (e) => {
+                this.handleInitChange(index, (e.target as HTMLInputElement).value);
+            });
+            
+            const nameInput = headerMainEl.createEl("input", {
+                cls: "character-name",
+                attr: { type: "text", value: char.name }
+            });
+            nameInput.addEventListener("change", (e) => {
+                this.characters[index].name = (e.target as HTMLInputElement).value;
+            });
+
+            // Action buttons
+            const actionBtns = headerEl.createEl("div", { cls: "character-actions" });
+            
+            const editBtn = actionBtns.createEl("button", {
+                cls: "action-btn edit-btn",
+                attr: { title: "Edit" }
+            });
+            setIcon(editBtn, "pencil");
+            editBtn.addEventListener("click", () => this.handleEdit(char));
+
+            const copyBtn = actionBtns.createEl("button", {
+                cls: "action-btn copy-btn",
+                attr: { title: "Copy" }
+            });
+            setIcon(copyBtn, "documents");
+            copyBtn.addEventListener("click", () => this.handleCopy(char));
+
+            const deleteBtn = actionBtns.createEl("button", {
+                cls: "action-btn delete-btn",
+                attr: { title: "Delete" }
+            });
+            setIcon(deleteBtn, "trash-2");
+            deleteBtn.addEventListener("click", () => this.handleDelete(index));
+
+            // Mook UI
+            if (char.type === 'mook') {
+                const statsEl = cardEl.createEl("div", { cls: "character-stats" });
+                this.createStat(statsEl, "Stun", char.stun?.toString() || "", false);
+                this.createStat(statsEl, "Wound state", char.woundState || "", false);
+                this.createStat(statsEl, "# of Shots", char.numShots?.toString() || "", false);
+                this.createStat(statsEl, "Mags", char.mags?.toString() || "", false);
+                this.createStat(statsEl, "Last DMG", char.lastDmg?.toString() || "", false);
+                if (char.skillPenalty && char.skillPenalty !== "None") {
+                    this.createStat(statsEl, "Skill penalty", char.skillPenalty, false);
+                }
+                const showDeathSaveInBasic = char.woundState && ["Mortal 0", "Mortal 1", "Mortal 2", "Mortal 3", "Mortal 4", "Mortal 5", "Mortal 6", "Dead"].includes(char.woundState);
+                if (showDeathSaveInBasic) {
+                    this.createStat(statsEl, "Death Save", char.deathSave?.toString() || "", false);
+                }
+                const actionRow = cardEl.createEl("div", { cls: "character-action-row" });
+                const hitBtn = actionRow.createEl("button", { cls: "action-btn", text: "Hit" });
+                hitBtn.addEventListener("click", () => this.handleHit(index));
+                const stunBtn = actionRow.createEl("button", {
+                    cls: "action-btn" + (char.isStunned ? " stunned-on" : ""),
+                    text: "Stun"
+                });
+                stunBtn.addEventListener("click", () => {
+                    char.isStunned = !char.isStunned;
+                    this.render();
+                });
+                const btn1 = actionRow.createEl("button", { cls: "action-btn", text: "-1" });
+                btn1.addEventListener("click", () => this.handleShotsChange(index, -1));
+                const btn3 = actionRow.createEl("button", { cls: "action-btn", text: "-3" });
+                btn3.addEventListener("click", () => this.handleShotsChange(index, -3));
+                const btn10 = actionRow.createEl("button", { cls: "action-btn", text: "-10" });
+                btn10.addEventListener("click", () => this.handleShotsChange(index, -10));
+                const reloadBtn = actionRow.createEl("button", { cls: "action-btn", text: "Reload" });
+                reloadBtn.addEventListener("click", () => this.handleReload(index));
+                const expandBtn = actionRow.createEl("button", {
+                    cls: "expand-btn" + (char.expanded ? " expanded" : ""),
+                    text: char.expanded ? "▼" : "▶"
+                });
+                expandBtn.addEventListener("click", () => {
+                    this.characters[index].expanded = !char.expanded;
+                    this.render();
+                });
+                if (char.notification && char.notification !== "None") {
+                    const notificationEl = cardEl.createEl("div", { cls: "character-notification" });
+                    notificationEl.createEl("span", { text: char.notification });
+                }
+                if (char.expanded) {
+                    const expandedEl = cardEl.createEl("div", { cls: "character-expanded" });
+                    expandedEl.createEl("hr");
+                    const expandedStats = expandedEl.createEl("div", { cls: "character-stats" });
+                    this.createStat(expandedStats, "Stun", char.stun?.toString() || "");
+                    this.createStat(expandedStats, "Wound state", char.woundState || "");
+                    this.createStat(expandedStats, "# of shots", char.numShots?.toString() || "");
+                    this.createStat(expandedStats, "Mags", char.mags?.toString() || "");
+                    this.createStat(expandedStats, "Last DMG", char.lastDmg?.toString() || "");
+                    this.createStat(expandedStats, "Head SP", char.headSp?.toString() || "");
+                    this.createStat(expandedStats, "Face SP", char.faceSp?.toString() || "");
+                    this.createStat(expandedStats, "Torso SP", char.torsoSp?.toString() || "");
+                    this.createStat(expandedStats, "Right arm SP", char.rightArmSp?.toString() || "");
+                    this.createStat(expandedStats, "Left arm SP", char.leftArmSp?.toString() || "");
+                    this.createStat(expandedStats, "Right leg SP", char.rightLegSp?.toString() || "");
+                    this.createStat(expandedStats, "Left leg SP", char.leftLegSp?.toString() || "");
+                    this.createStat(expandedStats, "Save stun penalty", char.saveStunPenalty?.toString() || "");
+                    this.createStat(expandedStats, "BTM", char.btm?.toString() || "");
+                    this.createStat(expandedStats, "DMG taken", char.dmgTaken?.toString() || "");
+                    this.createStat(expandedStats, "Death save", char.deathSave?.toString() || "");
+                    this.createStat(expandedStats, "Death save penalty", char.deathSavePenalty?.toString() || "");
+                    this.createStat(expandedStats, "# of Shots MAX", char.numShotsMax?.toString() || "");
+                }
+                if (char.hitExpanded) {
+                    const hitEl = cardEl.createEl("div", { cls: "character-expanded" });
+                    hitEl.createEl("hr");
+                    const hitForm = hitEl.createEl("div", { cls: "hit-form" });
+                    const locationRow = hitForm.createEl("div", { cls: "hit-row" });
+                    locationRow.createEl("label", { text: "Location roll:" });
+                    const locationInput = locationRow.createEl("input", {
+                        cls: "hit-input",
+                        attr: { type: "number", min: "0", max: "9", step: "1" }
+                    });
+                    const damageRow = hitForm.createEl("div", { cls: "hit-row" });
+                    damageRow.createEl("label", { text: "Damage:" });
+                    const damageInput = damageRow.createEl("input", {
+                        cls: "hit-input",
+                        attr: { type: "number", min: "1", step: "1" }
+                    });
+                    const faceRow = hitForm.createEl("div", { cls: "hit-row" });
+                    const faceLabel = faceRow.createEl("label", { text: "Face:" });
+                    const faceCheckbox = faceRow.createEl("input", {
+                        attr: { type: "checkbox" }
+                    });
+                    const errorContainer = hitForm.createEl("div", { cls: "hit-error" });
+                    const buttonRow = hitForm.createEl("div");
+                    buttonRow.setAttr("style", "display: flex; gap: 10px; margin-top: 10px;");
+                    const calculateBtn = buttonRow.createEl("button", {
+                        cls: "hit-calculate-btn",
+                        text: "Calculate"
+                    });
+                    calculateBtn.addEventListener("click", () => {
+                        const locationValue = Number(locationInput.value);
+                        const damageValue = Number(damageInput.value);
+                        if (!locationInput.value || !damageInput.value) {
+                            errorContainer.setText("Input values!");
+                            errorContainer.addClass("error-message");
+                            return;
+                        }
+                        this.handleHitCalculation(index, locationValue, damageValue, faceCheckbox.checked);
+                    });
+                    const cancelBtn = buttonRow.createEl("button", {
+                        cls: "hit-calculate-btn",
+                        text: "Cancel"
+                    });
+                    cancelBtn.addEventListener("click", () => {
+                        char.hitExpanded = false;
+                        this.render();
+                    });
+                }
+            } else if (char.type === 'drone') {
+                const statsEl = cardEl.createEl("div", { cls: "character-stats" });
+                this.createStat(statsEl, "Condition", char.condition || "", false);
+                this.createStat(statsEl, "# of Shots", char.numShots?.toString() || "", false);
+                this.createStat(statsEl, "Mags", char.mags?.toString() || "", false);
+                const actionRow = cardEl.createEl("div", { cls: "character-action-row" });
+                const hitBtn = actionRow.createEl("button", { cls: "action-btn", text: "Hit" });
+                hitBtn.addEventListener("click", () => this.handleHit(index));
+                const stunBtn = actionRow.createEl("button", {
+                    cls: "action-btn" + (char.isStunned ? " stunned-on" : ""),
+                    text: "Stun"
+                });
+                stunBtn.addEventListener("click", () => {
+                    char.isStunned = !char.isStunned;
+                    this.render();
+                });
+                const btn1 = actionRow.createEl("button", { cls: "action-btn", text: "-1" });
+                btn1.addEventListener("click", () => this.handleShotsChange(index, -1));
+                const btn3 = actionRow.createEl("button", { cls: "action-btn", text: "-3" });
+                btn3.addEventListener("click", () => this.handleShotsChange(index, -3));
+                const btn10 = actionRow.createEl("button", { cls: "action-btn", text: "-10" });
+                btn10.addEventListener("click", () => this.handleShotsChange(index, -10));
+                const reloadBtn = actionRow.createEl("button", { cls: "action-btn", text: "Reload" });
+                reloadBtn.addEventListener("click", () => this.handleReload(index));
+                const expandBtn = actionRow.createEl("button", {
+                    cls: "expand-btn" + (char.expanded ? " expanded" : ""),
+                    text: char.expanded ? "▼" : "▶"
+                });
+                expandBtn.addEventListener("click", () => {
+                    this.characters[index].expanded = !char.expanded;
+                    this.render();
+                });
+                if (char.condition === "Destroyed") {
+                    const notificationEl = cardEl.createEl("div", { cls: "character-notification" });
+                    notificationEl.createEl("span", { text: "Destroyed!" });
+                }
+                if (char.expanded) {
+                    const expandedEl = cardEl.createEl("div", { cls: "character-expanded" });
+                    expandedEl.createEl("hr");
+                    const expandedStats = expandedEl.createEl("div", { cls: "character-stats" });
+                    this.createStat(expandedStats, "SP", char.sp?.toString() || "");
+                    this.createStat(expandedStats, "SDP", char.sdp?.toString() || "");
+                    this.createStat(expandedStats, "DMG taken", char.dmgTaken?.toString() || "");
+                    this.createStat(expandedStats, "Condition", char.condition || "");
+                    this.createStat(expandedStats, "# of Shots", char.numShots?.toString() || "");
+                    this.createStat(expandedStats, "# of Shots MAX", char.numShotsMax?.toString() || "");
+                    this.createStat(expandedStats, "Mags", char.mags?.toString() || "");
+                }
+                if (char.hitExpanded) {
+                    const hitEl = cardEl.createEl("div", { cls: "character-expanded" });
+                    hitEl.createEl("hr");
+                    const hitForm = hitEl.createEl("div", { cls: "hit-form" });
+                    const damageRow = hitForm.createEl("div", { cls: "hit-row" });
+                    damageRow.createEl("label", { text: "Damage:" });
+                    const damageInput = damageRow.createEl("input", {
+                        cls: "hit-input",
+                        attr: { type: "number", min: "1", step: "1" }
+                    });
+                    const errorContainer = hitForm.createEl("div", { cls: "hit-error" });
+                    const buttonRow = hitForm.createEl("div");
+                    buttonRow.setAttr("style", "display: flex; gap: 10px; margin-top: 10px;");
+                    const calculateBtn = buttonRow.createEl("button", {
+                        cls: "hit-calculate-btn",
+                        text: "Calculate"
+                    });
+                    calculateBtn.addEventListener("click", () => {
+                        const damageValue = Number(damageInput.value);
+                        if (!damageInput.value) {
+                            errorContainer.setText("Input values!");
+                            errorContainer.addClass("error-message");
+                            return;
+                        }
+                        this.handleHitCalculation(index, 0, damageValue, false);
+                    });
+                    const cancelBtn = buttonRow.createEl("button", {
+                        cls: "hit-calculate-btn",
+                        text: "Cancel"
+                    });
+                    cancelBtn.addEventListener("click", () => {
+                        char.hitExpanded = false;
+                        this.render();
+                    });
+                }
+            } else if (char.type === 'robot') {
+                const statsEl = cardEl.createEl("div", { cls: "character-stats" });
+                this.createStat(statsEl, "# of Shots", char.numShots?.toString() || "", false);
+                this.createStat(statsEl, "Mags", char.mags?.toString() || "", false);
+                const actionRow = cardEl.createEl("div", { cls: "character-action-row" });
+                const hitBtn = actionRow.createEl("button", { cls: "action-btn", text: "Hit" });
+                hitBtn.addEventListener("click", () => this.handleHit(index));
+                const stunBtn = actionRow.createEl("button", {
+                    cls: "action-btn" + (char.isStunned ? " stunned-on" : ""),
+                    text: "Stun"
+                });
+                stunBtn.addEventListener("click", () => {
+                    char.isStunned = !char.isStunned;
+                    this.render();
+                });
+                const btn1 = actionRow.createEl("button", { cls: "action-btn", text: "-1" });
+                btn1.addEventListener("click", () => this.handleShotsChange(index, -1));
+                const btn3 = actionRow.createEl("button", { cls: "action-btn", text: "-3" });
+                btn3.addEventListener("click", () => this.handleShotsChange(index, -3));
+                const btn10 = actionRow.createEl("button", { cls: "action-btn", text: "-10" });
+                btn10.addEventListener("click", () => this.handleShotsChange(index, -10));
+                const reloadBtn = actionRow.createEl("button", { cls: "action-btn", text: "Reload" });
+                reloadBtn.addEventListener("click", () => this.handleReload(index));
+                const expandBtn = actionRow.createEl("button", {
+                    cls: "expand-btn" + (char.expanded ? " expanded" : ""),
+                    text: char.expanded ? "▼" : "▶"
+                });
+                expandBtn.addEventListener("click", () => {
+                    this.characters[index].expanded = !char.expanded;
+                    this.render();
+                });
+                const parts = [
+                    { key: 'head', dmgKey: 'headDmgTaken' },
+                    { key: 'torso', dmgKey: 'torsoDmgTaken' },
+                    { key: 'rightArm', dmgKey: 'rightArmDmgTaken' },
+                    { key: 'leftArm', dmgKey: 'leftArmDmgTaken' },
+                    { key: 'rightLeg', dmgKey: 'rightLegDmgTaken' },
+                    { key: 'leftLeg', dmgKey: 'leftLegDmgTaken' }
+                ];
+                const notifications = parts
+                    .map(({ key, dmgKey }) => {
+                        const dmgTaken = char[dmgKey as keyof Character] as number;
+                        if (dmgTaken !== undefined) {
+                            return getRobotPartStatus(dmgTaken, key);
+                        }
+                        return null;
+                    })
+                    .filter((notification): notification is string => notification !== null);
+                if (notifications.length > 0) {
+                    const notificationEl = cardEl.createEl("div", { cls: "character-notification" });
+                    notifications.forEach(notification => {
+                        notificationEl.createEl("div", { text: notification });
+                    });
+                }
+                if (char.expanded) {
+                    const expandedEl = cardEl.createEl("div", { cls: "character-expanded" });
+                    expandedEl.createEl("hr");
+                    const expandedStats = expandedEl.createEl("div", { cls: "character-stats" });
+                    this.createStat(expandedStats, "Head SP", char.headSp?.toString() || "");
+                    this.createStat(expandedStats, "Torso SP", char.torsoSp?.toString() || "");
+                    this.createStat(expandedStats, "Right arm SP", char.rightArmSp?.toString() || "");
+                    this.createStat(expandedStats, "Left arm SP", char.leftArmSp?.toString() || "");
+                    this.createStat(expandedStats, "Right leg SP", char.rightLegSp?.toString() || "");
+                    this.createStat(expandedStats, "Left leg SP", char.leftLegSp?.toString() || "");
+                    this.createStat(expandedStats, "Head DMG taken", char.headDmgTaken?.toString() || "");
+                    this.createStat(expandedStats, "Torso DMG taken", char.torsoDmgTaken?.toString() || "");
+                    this.createStat(expandedStats, "Right arm DMG taken", char.rightArmDmgTaken?.toString() || "");
+                    this.createStat(expandedStats, "Left arm DMG taken", char.leftArmDmgTaken?.toString() || "");
+                    this.createStat(expandedStats, "Right leg DMG taken", char.rightLegDmgTaken?.toString() || "");
+                    this.createStat(expandedStats, "Left leg DMG taken", char.leftLegDmgTaken?.toString() || "");
+                    this.createStat(expandedStats, "# of Shots", char.numShots?.toString() || "");
+                    this.createStat(expandedStats, "# of Shots MAX", char.numShotsMax?.toString() || "");
+                    this.createStat(expandedStats, "Mags", char.mags?.toString() || "");
+                }
+                if (char.hitExpanded) {
+                    const hitEl = cardEl.createEl("div", { cls: "character-expanded" });
+                    hitEl.createEl("hr");
+                    const hitForm = hitEl.createEl("div", { cls: "hit-form" });
+                    const locationRow = hitForm.createEl("div", { cls: "hit-row" });
+                    locationRow.createEl("label", { text: "Location roll:" });
+                    const locationInput = locationRow.createEl("input", {
+                        cls: "hit-input",
+                        attr: { type: "number", min: "0", max: "9", step: "1" }
+                    });
+                    const damageRow = hitForm.createEl("div", { cls: "hit-row" });
+                    damageRow.createEl("label", { text: "Damage:" });
+                    const damageInput = damageRow.createEl("input", {
+                        cls: "hit-input",
+                        attr: { type: "number", min: "1", step: "1" }
+                    });
+                    const errorContainer = hitForm.createEl("div", { cls: "hit-error" });
+                    const buttonRow = hitForm.createEl("div");
+                    buttonRow.setAttr("style", "display: flex; gap: 10px; margin-top: 10px;");
+                    const calculateBtn = buttonRow.createEl("button", {
+                        cls: "hit-calculate-btn",
+                        text: "Calculate"
+                    });
+                    calculateBtn.addEventListener("click", () => {
+                        const locationValue = Number(locationInput.value);
+                        const damageValue = Number(damageInput.value);
+                        if (!locationInput.value || !damageInput.value) {
+                            errorContainer.setText("Input values!");
+                            errorContainer.addClass("error-message");
+                            return;
+                        }
+                        this.handleHitCalculation(index, locationValue, damageValue, false);
+                    });
+                    const cancelBtn = buttonRow.createEl("button", {
+                        cls: "hit-calculate-btn",
+                        text: "Cancel"
+                    });
+                    cancelBtn.addEventListener("click", () => {
+                        char.hitExpanded = false;
+                        this.render();
+                    });
+                }
+            } else if (char.notification && char.notification !== "None") {
+                const notificationEl = cardEl.createEl("div", { cls: "character-notification" });
+                notificationEl.createEl("span", { text: char.notification });
+            }
+        });
     }
 
     private createStat(container: HTMLElement, label: string, value: string, isEditable: boolean = true) {
-        // ... (copy the full method body from main.ts)
+        const statEl = container.createEl("div", { cls: "character-stat" });
+        statEl.createEl("span", { text: `${label}: ` });
+
+        // List of stats that should never be editable
+        const readOnlyStats = ["Wound state", "Save stun penalty", "Death save penalty", "Skill penalty", "Condition"];
+        const isReadOnlyStat = readOnlyStats.includes(label);
+
+        // Find the character this stat belongs to by looking at its container hierarchy
+        const cardEl = container.closest('.character-card');
+        const allCards = Array.from(this.containerEl.querySelectorAll('.character-card'));
+        const currentCharIndex = cardEl ? allCards.indexOf(cardEl) : -1;
+        const currentChar = currentCharIndex >= 0 ? this.characters[currentCharIndex] : null;
+
+        // Check if this stat is in the expanded section
+        const isInExpandedSection = container.closest('.character-expanded') !== null;
+
+        // Adjust displayed value for Stun and Death Save only in the unexpanded section
+        let displayValue = value;
+        if (currentChar && !isInExpandedSection) {
+            if (label === "Stun" && currentChar.stun !== undefined && currentChar.saveStunPenalty !== undefined) {
+                displayValue = (currentChar.stun + currentChar.saveStunPenalty).toString();
+            } else if (label === "Death Save" && currentChar.deathSave !== undefined && currentChar.deathSavePenalty !== undefined) {
+                displayValue = (currentChar.deathSave + currentChar.deathSavePenalty).toString();
+            }
+        }
+
+        if (isEditable && !isReadOnlyStat) {
+            const input = statEl.createEl("input", {
+                cls: "stat-input",
+                attr: {
+                    type: "number",
+                    value: value, // Always use base value for input
+                    min: "0",
+                    step: "1"
+                }
+            });
+            input.addEventListener("change", (e) => {
+                if (currentCharIndex >= 0) {
+                    const key = this.getCharacterKeyFromLabel(label);
+                    if (key) {
+                        let newValue = Math.floor(Number((e.target as HTMLInputElement).value));
+                        if (!isNaN(newValue)) {
+                            if (key === 'dmgTaken') {
+                                const char = this.characters[currentCharIndex];
+                                char.dmgTaken = newValue;
+                                
+                                // Update condition for drones when DMG Taken changes
+                                if (char.type === 'drone' && char.sdp !== undefined) {
+                                    char.condition = getDroneCondition(newValue, char.sdp);
+                                } else {
+                                    // Handle mook wound state updates
+                                    const woundState = getWoundStateFromDmg(newValue);
+                                    char.woundState = woundState;
+                                    char.saveStunPenalty = getStunPenaltyFromWoundState(woundState);
+                                    char.deathSavePenalty = getDeathPenaltyFromWoundState(woundState);
+                                    char.skillPenalty = getSkillPenaltyFromWoundState(woundState);
+                                }
+                            } else if (key.endsWith('DmgTaken') && this.characters[currentCharIndex].type === 'robot') {
+                                // Handle robot part DMG Taken updates
+                                const char = this.characters[currentCharIndex];
+                                (char[key] as number) = newValue;
+                                
+                                // Get the part name from the key
+                                const partName = key.replace('DmgTaken', '').split(/(?=[A-Z])/).join('').toLowerCase();
+                                
+                                // Check for status updates
+                                const status = getRobotPartStatus(newValue, partName);
+                                
+                                // Initialize notifications array if it doesn't exist
+                                if (!char.notifications) {
+                                    char.notifications = [];
+                                }
+                                
+                                // Remove any existing notifications for this part
+                                char.notifications = char.notifications.filter(n => !n.toLowerCase().includes(partName));
+                                
+                                // Add the new notification if there is one
+                                if (status) {
+                                    char.notifications.push(status);
+                                }
+                                
+                                // Sort notifications
+                                char.notifications = sortRobotNotifications(char.notifications);
+                            } else if (key === 'stun') {
+                                // Store the base value without penalty
+                                this.characters[currentCharIndex].stun = newValue;
+                                // No need to add penalty here as it's handled in display
+                            } else if (key === 'deathSave') {
+                                // Store the base value without penalty
+                                this.characters[currentCharIndex].deathSave = newValue;
+                                // No need to add penalty here as it's handled in display
+                            } else {
+                                (this.characters[currentCharIndex] as any)[key] = newValue;
+                            }
+                            this.render();
+                        }
+                    }
+                }
+            });
+        } else {
+            statEl.createEl("span", { text: displayValue });
+        }
     }
 
     private getCharacterKeyFromLabel(label: string): keyof Character | null {
