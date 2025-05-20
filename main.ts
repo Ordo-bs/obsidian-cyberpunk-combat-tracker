@@ -1,177 +1,20 @@
-import { App, ItemView, Plugin, WorkspaceLeaf, addIcon, Notice, MarkdownPostProcessorContext, setIcon } from 'obsidian';
+import { App, ItemView, Plugin, WorkspaceLeaf, addIcon, Notice, MarkdownPostProcessorContext, setIcon, ViewStateResult } from 'obsidian';
+import type { Character, CharacterType, DeferredView, ViewState } from './src/types';
+import { getWoundStateFromDmg } from './src/utils/wound';
+import { getStunPenaltyFromWoundState, getDeathPenaltyFromWoundState, getSkillPenaltyFromWoundState } from './src/utils/penalties';
+import { getHitLocation } from './src/utils/hitLocation';
+import { getDroneCondition } from './src/utils/drone';
+import { getRobotPartStatus, sortRobotNotifications } from './src/utils/robot';
+import { CreateCharacterView } from "./src/views/CreateCharacterView";
 
 const VIEW_TYPE_COMBAT_TRACKER = "cyberpunk-combat-tracker-view";
 
 // Add Lucide icons
-const swordsIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-swords"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M14.5 6.5 21 0v3l-6.5 6.5"/><path d="m4 14 6-6"/><path d="M4 14v3"/></svg>`;
-const diceIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-dice-5"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M16 8h.01"/><path d="M8 8h.01"/><path d="M8 16h.01"/><path d="M16 16h.01"/><path d="M12 12h.01"/></svg>`;
-const editIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-edit"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-const copyIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
-const trashIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>`;
-
-// Helper functions for wound state calculations
-function getWoundStateFromDmg(dmg: number): string {
-	if (dmg === 0) return "Healthy";
-	if (dmg <= 4) return "Light";
-	if (dmg <= 8) return "Serious";
-	if (dmg <= 12) return "Critical";
-	if (dmg <= 16) return "Mortal 0";
-	if (dmg <= 20) return "Mortal 1";
-	if (dmg <= 24) return "Mortal 2";
-	if (dmg <= 28) return "Mortal 3";
-	if (dmg <= 32) return "Mortal 4";
-	if (dmg <= 36) return "Mortal 5";
-	if (dmg <= 40) return "Mortal 6";
-	return "Dead";
-}
-
-function getStunPenaltyFromWoundState(woundState: string): number {
-	const penalties: { [key: string]: number } = {
-		"Healthy": 0,
-		"Light": 0,
-		"Serious": -1,
-		"Critical": -2,
-		"Mortal 0": -3,
-		"Mortal 1": -4,
-		"Mortal 2": -5,
-		"Mortal 3": -6,
-		"Mortal 4": -7,
-		"Mortal 5": -8,
-		"Mortal 6": -9,
-		"Dead": -9
-	};
-	return penalties[woundState] || 0;
-}
-
-function getDeathPenaltyFromWoundState(woundState: string): number {
-	const penalties: { [key: string]: number } = {
-		"Mortal 0": 0,
-		"Mortal 1": -1,
-		"Mortal 2": -2,
-		"Mortal 3": -3,
-		"Mortal 4": -4,
-		"Mortal 5": -5,
-		"Mortal 6": -6,
-		"Dead": -6
-	};
-	return penalties[woundState] || 0;
-}
-
-function getSkillPenaltyFromWoundState(woundState: string): string {
-	const penalties: { [key: string]: string } = {
-		"Healthy": "None",
-		"Light": "None",
-		"Serious": "-2 REF/DEX",
-		"Critical": "REF/DEX/INT/CL at 1/2",
-		"Mortal 0": "REF/DEX/INT/CL at 1/3",
-		"Mortal 1": "REF/DEX/INT/CL at 1/3",
-		"Mortal 2": "REF/DEX/INT/CL at 1/3",
-		"Mortal 3": "REF/DEX/INT/CL at 1/3",
-		"Mortal 4": "REF/DEX/INT/CL at 1/3",
-		"Mortal 5": "REF/DEX/INT/CL at 1/3",
-		"Mortal 6": "REF/DEX/INT/CL at 1/3",
-		"Dead": "REF/DEX/INT/CL at 1/3"
-	};
-	return penalties[woundState] || "None";
-}
-
-// Hit location mapping
-function getHitLocation(roll: number): keyof Character {
-	if (roll === 1) return "headSp";
-	if (roll >= 2 && roll <= 4) return "torsoSp";
-	if (roll === 5) return "rightArmSp";
-	if (roll === 6) return "leftArmSp";
-	if (roll === 7 || roll === 8) return "rightLegSp";
-	if (roll === 9 || roll === 0) return "leftLegSp";
-	return "torsoSp"; // Default to torso if invalid roll
-}
-
-type CharacterType = 'mook' | 'player' | 'drone' | 'robot';
-
-interface Character {
-	type: CharacterType;
-	init: number;
-	name: string;
-	isHighlighted: boolean;
-	// Mook-specific stats
-	stun?: number;
-	headSp?: number;
-	expanded?: boolean;
-	woundState?: string;
-	numShots?: number;
-	mags?: number;
-	lastDmg?: number;
-	skillPenalty?: string;
-	notification?: string;
-	faceSp?: number;
-	torsoSp?: number;
-	rightArmSp?: number;
-	leftArmSp?: number;
-	rightLegSp?: number;
-	leftLegSp?: number;
-	saveStunPenalty?: number;
-	btm?: number;
-	dmgTaken?: number;
-	deathSave?: number;
-	deathSavePenalty?: number;
-	numShotsMax?: number;
-	hitExpanded?: boolean;
-	// Drone-specific stats
-	sp?: number;
-	sdp?: number;
-	condition?: string;
-	// Robot-specific stats
-	headDmgTaken?: number;
-	torsoDmgTaken?: number;
-	rightArmDmgTaken?: number;
-	leftArmDmgTaken?: number;
-	rightLegDmgTaken?: number;
-	leftLegDmgTaken?: number;
-	notifications?: string[];
-}
-
-// Add helper function for drone condition
-function getDroneCondition(dmgTaken: number, sdp: number): string {
-	const dmgPercent = (dmgTaken / sdp) * 100;
-	if (dmgTaken >= sdp) return "Destroyed";
-	if (dmgPercent > 80) return "Damaged";
-	if (dmgPercent > 50) return "Battered";
-	return "Functional";
-}
-
-// Add helper function for robot part status
-function getRobotPartStatus(dmgTaken: number, part: string): string | null {
-	const partMap: { [key: string]: string } = {
-		'head': 'Head',
-		'torso': 'Torso',
-		'rightArm': 'Right Arm',
-		'leftArm': 'Left Arm',
-		'rightLeg': 'Right Leg',
-		'leftLeg': 'Left Leg'
-	};
-	
-	const capitalizedPart = partMap[part] || part;
-	
-	if (part === 'torso') {
-		if (dmgTaken >= 40) return `${capitalizedPart} destroyed`;
-		if (dmgTaken >= 30) return `${capitalizedPart} disabled`;
-		return null;
-	} else {
-		if (dmgTaken >= 30) return `${capitalizedPart} destroyed`;
-		if (dmgTaken >= 20) return `${capitalizedPart} disabled`;
-		return null;
-	}
-}
-
-// Add helper function to sort robot notifications
-function sortRobotNotifications(notifications: string[]): string[] {
-	const order = ['Head', 'Torso', 'Right Arm', 'Left Arm', 'Right Leg', 'Left Leg'];
-	return notifications.sort((a, b) => {
-		const partA = order.find(part => a.startsWith(part)) || '';
-		const partB = order.find(part => b.startsWith(part)) || '';
-		return order.indexOf(partA) - order.indexOf(partB);
-	});
-}
+const swordsIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="var(--icon-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M14.5 6.5 21 0v3l-6.5 6.5"/><path d="m4 14 6-6"/><path d="M4 14v3"/></svg>`;
+const diceIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="var(--icon-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M16 8h.01"/><path d="M8 8h.01"/><path d="M8 16h.01"/><path d="M16 16h.01"/><path d="M12 12h.01"/></svg>`;
+const editIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="var(--icon-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+const copyIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="var(--icon-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+const trashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="var(--icon-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`;
 
 class EditView extends ItemView {
 	private character: Character;
@@ -188,7 +31,7 @@ class EditView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return "Edit Character";
+		return "Edit character";
 	}
 
 	async onOpen(): Promise<void> {
@@ -276,7 +119,7 @@ class EditView extends ItemView {
 					saveStunPenalty: 0,
 					btm: -2,
 					dmgTaken: 0,
-					deathSave: 7,
+					deathSave: 6, // Set to same as stun
 					deathSavePenalty: 0,
 					numShotsMax: 35
 				};
@@ -293,36 +136,36 @@ class EditView extends ItemView {
 
 		if (this.character.type === 'mook') {
 			// Basic stats
-			form.createEl("h3", { text: "Basic Stats" });
+			form.createEl("h3", { text: "Basic stats" });
 			this.createEditField(form, "stun", "Stun", "number");
-			this.createEditField(form, "woundState", "Wound State", "text");
-			this.createEditField(form, "numShots", "# of Shots", "number");
+			this.createEditField(form, "woundState", "Wound state", "text");
+			this.createEditField(form, "numShots", "# of shots", "number");
 			this.createEditField(form, "mags", "Mags", "number");
 			this.createEditField(form, "lastDmg", "Last DMG", "number");
-			this.createEditField(form, "skillPenalty", "Skill Penalty", "text");
+			this.createEditField(form, "skillPenalty", "Skill penalty", "text");
 			this.createEditField(form, "notification", "Notification", "text");
 
 			// Expanded stats
-			form.createEl("h3", { text: "Expanded Stats" });
+			form.createEl("h3", { text: "Expanded stats" });
 			this.createEditField(form, "headSp", "Head SP", "number");
 			this.createEditField(form, "faceSp", "Face SP", "number");
 			this.createEditField(form, "torsoSp", "Torso SP", "number");
-			this.createEditField(form, "rightArmSp", "Right Arm SP", "number");
-			this.createEditField(form, "leftArmSp", "Left Arm SP", "number");
-			this.createEditField(form, "rightLegSp", "Right Leg SP", "number");
-			this.createEditField(form, "leftLegSp", "Left Leg SP", "number");
-			this.createEditField(form, "saveStunPenalty", "Save Stun Penalty", "number");
+			this.createEditField(form, "rightArmSp", "Right arm SP", "number");
+			this.createEditField(form, "leftArmSp", "Left arm SP", "number");
+			this.createEditField(form, "rightLegSp", "Right leg SP", "number");
+			this.createEditField(form, "leftLegSp", "Left leg SP", "number");
+			this.createEditField(form, "saveStunPenalty", "Save stun penalty", "number");
 			this.createEditField(form, "btm", "BTM", "number");
-			this.createEditField(form, "dmgTaken", "DMG Taken", "number");
-			this.createEditField(form, "deathSave", "Death Save", "number");
-			this.createEditField(form, "deathSavePenalty", "Death Save Penalty", "number");
-			this.createEditField(form, "numShotsMax", "# of Shots MAX", "number");
+			this.createEditField(form, "dmgTaken", "DMG taken", "number");
+			this.createEditField(form, "deathSave", "Death save", "number");
+			this.createEditField(form, "deathSavePenalty", "Death save penalty", "number");
+			this.createEditField(form, "numShotsMax", "# of shots max", "number");
 		}
 
 		// Save button
 		const saveBtn = form.createEl("button", {
 			cls: "edit-save-btn",
-			text: "Save Changes"
+			text: "Save changes"
 		});
 		saveBtn.addEventListener("click", () => {
 			this.onSave(this.character);
@@ -365,128 +208,54 @@ class EditView extends ItemView {
 	}
 }
 
-class CreateCharacterView extends ItemView {
-	private onSave: (values: Partial<Character>) => void;
-	private values: Partial<Character>;
-
-	constructor(leaf: WorkspaceLeaf, onSave: (values: Partial<Character>) => void) {
-		super(leaf);
-		this.onSave = onSave;
-		this.values = {
-			type: 'mook',
-			init: 99,
-			name: `Character ${Math.floor(Math.random() * 1000) + 1}`
-		};
-	}
-
-	getViewType(): string {
-		return "cyberpunk-character-create";
-	}
-
-	getDisplayText(): string {
-		return "Create Character";
-	}
-
-	async onOpen(): Promise<void> {
-		const container = this.containerEl.children[1];
-		container.empty();
-		this.render();
-	}
-
-	private render(): void {
-		const container = this.containerEl.children[1];
-		container.empty();
-		
-		const form = container.createEl("div", { cls: "character-edit-form" });
-
-		// Type selector
-		const typeRow = form.createEl("div", { cls: "edit-row" });
-		typeRow.createEl("label", { text: "Type:" });
-		const typeSelect = typeRow.createEl("select", { cls: "edit-select" });
-		typeSelect.createEl("option", { text: "Mook", value: "mook" });
-		typeSelect.createEl("option", { text: "Player", value: "player" });
-		typeSelect.createEl("option", { text: "Drone", value: "drone" });
-		typeSelect.createEl("option", { text: "Robot", value: "robot" });
-		typeSelect.value = this.values.type || 'mook';
-		typeSelect.addEventListener("change", () => {
-			this.values.type = typeSelect.value as CharacterType;
-			this.render();
-		});
-
-		// Always show init and name
-		this.createField(form, "init", "Init", "number", this.values);
-		this.createField(form, "name", "Name", "text", this.values);
-
-		if (this.values.type === 'mook') {
-			// Mook-specific fields
-			this.createField(form, "stun", "Stun", "number", this.values);
-			this.createField(form, "numShotsMax", "# of Shots MAX", "number", this.values);
-			this.createField(form, "mags", "Mags", "number", this.values);
-			this.createField(form, "headSp", "Head SP", "number", this.values);
-			this.createField(form, "faceSp", "Face SP", "number", this.values);
-			this.createField(form, "torsoSp", "Torso SP", "number", this.values);
-			this.createField(form, "rightArmSp", "Right Arm SP", "number", this.values);
-			this.createField(form, "leftArmSp", "Left Arm SP", "number", this.values);
-			this.createField(form, "rightLegSp", "Right Leg SP", "number", this.values);
-			this.createField(form, "leftLegSp", "Left Leg SP", "number", this.values);
-			this.createField(form, "btm", "BTM", "number", this.values);
-		} else if (this.values.type === 'drone') {
-			// Drone-specific fields
-			this.createField(form, "sp", "SP", "number", this.values);
-			this.createField(form, "sdp", "SDP", "number", this.values);
-			this.createField(form, "numShotsMax", "# of Shots MAX", "number", this.values);
-			this.createField(form, "mags", "Mags", "number", this.values);
-		} else if (this.values.type === 'robot') {
-			// Only show init, name, and # of shots max for robots
-			this.createField(form, "numShotsMax", "# of Shots MAX", "number", this.values);
-		}
-		// Player type doesn't need additional fields
-
-		// Create button
-		const createBtn = form.createEl("button", {
-			cls: "edit-save-btn",
-			text: "Create"
-		});
-		createBtn.addEventListener("click", () => {
-			this.onSave(this.values);
-			this.leaf.detach();
-		});
-	}
-
-	private createField(container: HTMLElement, key: keyof Character, label: string, type: string, values: Partial<Character>): void {
-		const row = container.createEl("div", { cls: "edit-row" });
-		row.createEl("label", { text: label });
-		const input = row.createEl("input", {
-			cls: "edit-input",
-			attr: {
-				type: type,
-				value: values[key]?.toString() || ""
-			}
-		});
-		input.addEventListener("change", () => {
-			let value: any = type === "number" ? Number(input.value) : input.value;
-			if (type === "number") {
-				value = Math.floor(value);
-			}
-			values[key] = value;
-		});
-	}
-
-	// Add method to set initial values
-	public setInitialValues(values: Partial<Character>) {
-		this.values = { ...this.values, ...values };
-		this.render();
-	}
-}
-
 export default class CyberpunkStatBlocks extends Plugin {
+    private isDeferredViewSupported(): boolean {
+        return true; // Always enable deferred view support for now
+    }
+
+    private isDeferredView(view: any): boolean {
+        return view && typeof (view as any).onOpen === 'function';
+    }
+
+    private async initializeView(leaf: WorkspaceLeaf): Promise<void> {
+        if (this.isDeferredView(leaf.view)) {
+            await (leaf.view as any).onOpen();
+            const state = (leaf.view as any).getState();
+            if (state) {
+                await (leaf.view as any).setState(state);
+            }
+        }
+    }
+
+    private async cleanupView(leaf: WorkspaceLeaf): Promise<void> {
+        if (this.isDeferredView(leaf.view)) {
+            await (leaf.view as any).onClose();
+        }
+    }
+
+    private async getCombatTrackerView(leaf: WorkspaceLeaf): Promise<CombatTrackerView | null> {
+        try {
+            if (!leaf) return null;
+            
+            if (this.isDeferredViewSupported() && this.isDeferredView(leaf.view)) {
+                await this.initializeView(leaf);
+            }
+            
+            return leaf.view as unknown as CombatTrackerView;
+        } catch (error) {
+            console.error('Error accessing combat tracker view:', error);
+            new Notice('Error accessing combat tracker view');
+            return null;
+        }
+    }
+
 	async onload() {
 		// Register custom icons
 		addIcon('swords', swordsIcon);
 		addIcon('dice', diceIcon);
 		addIcon('edit', editIcon);
 		addIcon('copy', copyIcon);
-		addIcon('trash', trashIcon);
+		addIcon('trash-2', trashIcon);
 
 		// Register views
 		this.registerView(
@@ -532,7 +301,7 @@ export default class CyberpunkStatBlocks extends Plugin {
 
 			const button = el.createEl("button", {
 				cls: "cyberpunk-add-button",
-				text: "Add Character"
+				text: params.name ? `Add ${params.name}` : "Add Character"
 			});
 			
 			button.addEventListener("click", async () => {
@@ -550,35 +319,25 @@ export default class CyberpunkStatBlocks extends Plugin {
 					return;
 				}
 				
-				const trackerView = trackerLeaf.view as CombatTrackerView;
+				const trackerView = await this.getCombatTrackerView(trackerLeaf);
 				if (trackerView) {
-					// Call handleAdd with the parsed parameters
-					trackerView.handleAdd(params);
+					// Create a copy of the parameters to avoid modifying the original
+					const paramsCopy = { ...params };
+					
+					// If initMod is provided, calculate init by adding it to a random roll
+					if (paramsCopy.initMod !== undefined) {
+						// Generate a random number between 1 and 10
+						const roll = Math.floor(Math.random() * 10) + 1;
+						// Show the roll result to the user
+						new Notice(`Initiative Roll: ${roll} + ${paramsCopy.initMod} = ${roll + paramsCopy.initMod}`);
+						paramsCopy.init = roll + paramsCopy.initMod;
+						delete paramsCopy.initMod; // Remove the modifier from params after using it
+					}
+					// Call handleAdd with the parsed parameters and skipEdit=true
+					trackerView.handleAdd(paramsCopy, true);
 				}
 			});
 		});
-
-		// Add styles for the add button and icons
-		const style = document.createElement('style');
-		style.textContent = `
-			.cyberpunk-add-button {
-				background-color: var(--interactive-accent);
-				color: var(--text-on-accent);
-				padding: 8px 16px;
-				border: none;
-				border-radius: 4px;
-				cursor: pointer;
-				font-size: 14px;
-				transition: background-color 0.15s ease;
-				width: 100%;
-				margin: 4px 0;
-			}
-			
-			.cyberpunk-add-button:hover {
-				background-color: var(--interactive-accent-hover);
-			}
-		`;
-		document.head.appendChild(style);
 	}
 
 	async onunload() {
@@ -587,12 +346,9 @@ export default class CyberpunkStatBlocks extends Plugin {
 
 	async activateView() {
 		const { workspace } = this.app;
-
-		// Check if view is already open
 		let leaf = workspace.getLeavesOfType(VIEW_TYPE_COMBAT_TRACKER)[0];
 		
 		if (!leaf) {
-			// Create new leaf in the right sidebar
 			const newLeaf = workspace.getRightLeaf(false);
 			if (newLeaf) {
 				await newLeaf.setViewState({
@@ -602,17 +358,18 @@ export default class CyberpunkStatBlocks extends Plugin {
 				leaf = newLeaf;
 			}
 		}
-
-		// Reveal the leaf
+		
 		if (leaf) {
 			workspace.revealLeaf(leaf);
+			// Wait for the view to be ready
+			await this.getCombatTrackerView(leaf);
 		}
 	}
 }
 
 class CombatTrackerView extends ItemView {
 	private characters: Character[] = [
-		this.createDefaultCharacter("Character 1", true)
+		this.createDefaultCharacter("Test character", true, { init: 98 })
 	];
 
 	private createDefaultCharacter(name: string, isHighlighted: boolean, params?: Partial<Character>): Character {
@@ -679,7 +436,7 @@ class CombatTrackerView extends ItemView {
 					saveStunPenalty: params?.saveStunPenalty ?? 0,
 					btm: params?.btm ?? -2,
 					dmgTaken: params?.dmgTaken ?? 0,
-					deathSave: params?.deathSave ?? 7,
+					deathSave: params?.deathSave ?? params?.stun ?? 6, // Set to Stun value if not provided
 					deathSavePenalty: params?.deathSavePenalty ?? 0,
 					numShotsMax: params?.numShotsMax ?? 35
 				};
@@ -698,7 +455,7 @@ class CombatTrackerView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return "Combat Tracker";
+		return "Combat tracker";
 	}
 
 	async onOpen(): Promise<void> {
@@ -706,6 +463,28 @@ class CombatTrackerView extends ItemView {
 		container.empty();
 		container.createEl("div", { cls: "combat-tracker-container" });
 		this.render();
+	}
+
+	async onClose(): Promise<void> {
+		// Cleanup any resources if needed
+	}
+
+	getState(): Record<string, unknown> {
+		return {
+			characters: this.characters
+		};
+	}
+
+	async setState(state: unknown): Promise<void> {
+		if (
+			state &&
+			typeof state === 'object' &&
+			'characters' in state &&
+			Array.isArray((state as any).characters)
+		) {
+			this.characters = (state as any).characters as Character[];
+			this.render();
+		}
 	}
 
 	private isElementInView(element: HTMLElement, container: HTMLElement): boolean {
@@ -764,7 +543,22 @@ class CombatTrackerView extends ItemView {
 		}
 	}
 
-	public async handleAdd(params?: Partial<Character>) {
+	public async handleAdd(params?: Partial<Character>, skipEdit: boolean = false) {
+		if (skipEdit) {
+			// Create character directly with provided parameters
+			const shouldHighlight = this.characters.length === 0;
+			const newChar = this.createDefaultCharacter(
+				params?.name ?? `Character ${this.characters.length + 1}`,
+				shouldHighlight,
+				params
+			);
+			
+			this.characters.unshift(newChar);
+			this.sortByInit();
+			this.render();
+			return;
+		}
+
 		const leaf = this.app.workspace.getLeaf(true);
 		if (leaf) {
 			const createView = new CreateCharacterView(leaf, (values) => {
@@ -1190,26 +984,37 @@ class CombatTrackerView extends ItemView {
 
 				// Basic stats (read-only)
 				this.createStat(statsEl, "Stun", char.stun?.toString() || "", false);
-				this.createStat(statsEl, "Wound State", char.woundState || "", false);
+				this.createStat(statsEl, "Wound state", char.woundState || "", false);
 				this.createStat(statsEl, "# of Shots", char.numShots?.toString() || "", false);
 				this.createStat(statsEl, "Mags", char.mags?.toString() || "", false);
 				this.createStat(statsEl, "Last DMG", char.lastDmg?.toString() || "", false);
 				
 				// Only show skill penalty in basic stats if it's not "None"
 				if (char.skillPenalty && char.skillPenalty !== "None") {
-					this.createStat(statsEl, "Skill Penalty", char.skillPenalty, false);
+					this.createStat(statsEl, "Skill penalty", char.skillPenalty, false);
 				}
 
 				// Show Death Save in basic stats for certain wound states
 				const showDeathSaveInBasic = char.woundState && ["Mortal 0", "Mortal 1", "Mortal 2", "Mortal 3", "Mortal 4", "Mortal 5", "Mortal 6", "Dead"].includes(char.woundState);
 				if (showDeathSaveInBasic) {
 					this.createStat(statsEl, "Death Save", char.deathSave?.toString() || "", false);
+					// Removed: Death save penalty in collapsed view
 				}
 
 				// Action buttons and expand button
 				const actionRow = cardEl.createEl("div", { cls: "character-action-row" });
 				const hitBtn = actionRow.createEl("button", { cls: "action-btn", text: "Hit" });
 				hitBtn.addEventListener("click", () => this.handleHit(index));
+				
+				// Stun toggle button
+				const stunBtn = actionRow.createEl("button", {
+					cls: "action-btn" + (char.isStunned ? " stunned-on" : ""),
+					text: "Stun"
+				});
+				stunBtn.addEventListener("click", () => {
+					char.isStunned = !char.isStunned;
+					this.render();
+				});
 				
 				// Shots control buttons
 				const btn1 = actionRow.createEl("button", { cls: "action-btn", text: "-1" });
@@ -1243,22 +1048,22 @@ class CombatTrackerView extends ItemView {
 					// Expanded stats (editable)
 					const expandedStats = expandedEl.createEl("div", { cls: "character-stats" });
 					this.createStat(expandedStats, "Stun", char.stun?.toString() || "");
-					this.createStat(expandedStats, "Wound State", char.woundState || "");
-					this.createStat(expandedStats, "# of Shots", char.numShots?.toString() || "");
+					this.createStat(expandedStats, "Wound state", char.woundState || "");
+					this.createStat(expandedStats, "# of shots", char.numShots?.toString() || "");
 					this.createStat(expandedStats, "Mags", char.mags?.toString() || "");
 					this.createStat(expandedStats, "Last DMG", char.lastDmg?.toString() || "");
 					this.createStat(expandedStats, "Head SP", char.headSp?.toString() || "");
 					this.createStat(expandedStats, "Face SP", char.faceSp?.toString() || "");
 					this.createStat(expandedStats, "Torso SP", char.torsoSp?.toString() || "");
-					this.createStat(expandedStats, "Right Arm SP", char.rightArmSp?.toString() || "");
-					this.createStat(expandedStats, "Left Arm SP", char.leftArmSp?.toString() || "");
-					this.createStat(expandedStats, "Right Leg SP", char.rightLegSp?.toString() || "");
-					this.createStat(expandedStats, "Left Leg SP", char.leftLegSp?.toString() || "");
-					this.createStat(expandedStats, "Save Stun Penalty", char.saveStunPenalty?.toString() || "");
+					this.createStat(expandedStats, "Right arm SP", char.rightArmSp?.toString() || "");
+					this.createStat(expandedStats, "Left arm SP", char.leftArmSp?.toString() || "");
+					this.createStat(expandedStats, "Right leg SP", char.rightLegSp?.toString() || "");
+					this.createStat(expandedStats, "Left leg SP", char.leftLegSp?.toString() || "");
+					this.createStat(expandedStats, "Save stun penalty", char.saveStunPenalty?.toString() || "");
 					this.createStat(expandedStats, "BTM", char.btm?.toString() || "");
-					this.createStat(expandedStats, "DMG Taken", char.dmgTaken?.toString() || "");
-					this.createStat(expandedStats, "Death Save", char.deathSave?.toString() || "");
-					this.createStat(expandedStats, "Death Save Penalty", char.deathSavePenalty?.toString() || "");
+					this.createStat(expandedStats, "DMG taken", char.dmgTaken?.toString() || "");
+					this.createStat(expandedStats, "Death save", char.deathSave?.toString() || "");
+					this.createStat(expandedStats, "Death save penalty", char.deathSavePenalty?.toString() || "");
 					this.createStat(expandedStats, "# of Shots MAX", char.numShotsMax?.toString() || "");
 				}
 
@@ -1270,7 +1075,7 @@ class CombatTrackerView extends ItemView {
 					
 					// Location Roll input
 					const locationRow = hitForm.createEl("div", { cls: "hit-row" });
-					locationRow.createEl("label", { text: "Location Roll:" });
+					locationRow.createEl("label", { text: "Location roll:" });
 					const locationInput = locationRow.createEl("input", {
 						cls: "hit-input",
 						attr: { type: "number", min: "0", max: "9", step: "1" }
@@ -1294,8 +1099,10 @@ class CombatTrackerView extends ItemView {
 					// Error message container
 					const errorContainer = hitForm.createEl("div", { cls: "hit-error" });
 					
-					// Calculate button
-					const calculateBtn = hitForm.createEl("button", {
+					// Calculate and Cancel buttons in a row
+					const buttonRow = hitForm.createEl("div");
+					buttonRow.setAttr("style", "display: flex; gap: 10px; margin-top: 10px;");
+					const calculateBtn = buttonRow.createEl("button", {
 						cls: "hit-calculate-btn",
 						text: "Calculate"
 					});
@@ -1311,6 +1118,14 @@ class CombatTrackerView extends ItemView {
 						
 						this.handleHitCalculation(index, locationValue, damageValue, faceCheckbox.checked);
 					});
+					const cancelBtn = buttonRow.createEl("button", {
+						cls: "hit-calculate-btn",
+						text: "Cancel"
+					});
+					cancelBtn.addEventListener("click", () => {
+						char.hitExpanded = false;
+						this.render();
+					});
 				}
 			} else if (char.type === 'drone') {
 				const statsEl = cardEl.createEl("div", { cls: "character-stats" });
@@ -1324,6 +1139,16 @@ class CombatTrackerView extends ItemView {
 				const actionRow = cardEl.createEl("div", { cls: "character-action-row" });
 				const hitBtn = actionRow.createEl("button", { cls: "action-btn", text: "Hit" });
 				hitBtn.addEventListener("click", () => this.handleHit(index));
+				
+				// Stun toggle button
+				const stunBtn = actionRow.createEl("button", {
+					cls: "action-btn" + (char.isStunned ? " stunned-on" : ""),
+					text: "Stun"
+				});
+				stunBtn.addEventListener("click", () => {
+					char.isStunned = !char.isStunned;
+					this.render();
+				});
 				
 				// Shots control buttons
 				const btn1 = actionRow.createEl("button", { cls: "action-btn", text: "-1" });
@@ -1359,7 +1184,7 @@ class CombatTrackerView extends ItemView {
 					const expandedStats = expandedEl.createEl("div", { cls: "character-stats" });
 					this.createStat(expandedStats, "SP", char.sp?.toString() || "");
 					this.createStat(expandedStats, "SDP", char.sdp?.toString() || "");
-					this.createStat(expandedStats, "DMG Taken", char.dmgTaken?.toString() || "");
+					this.createStat(expandedStats, "DMG taken", char.dmgTaken?.toString() || "");
 					this.createStat(expandedStats, "Condition", char.condition || "");
 					this.createStat(expandedStats, "# of Shots", char.numShots?.toString() || "");
 					this.createStat(expandedStats, "# of Shots MAX", char.numShotsMax?.toString() || "");
@@ -1383,8 +1208,10 @@ class CombatTrackerView extends ItemView {
 					// Error message container
 					const errorContainer = hitForm.createEl("div", { cls: "hit-error" });
 					
-					// Calculate button
-					const calculateBtn = hitForm.createEl("button", {
+					// Calculate and Cancel buttons in a row
+					const buttonRow = hitForm.createEl("div");
+					buttonRow.setAttr("style", "display: flex; gap: 10px; margin-top: 10px;");
+					const calculateBtn = buttonRow.createEl("button", {
 						cls: "hit-calculate-btn",
 						text: "Calculate"
 					});
@@ -1399,6 +1226,14 @@ class CombatTrackerView extends ItemView {
 						
 						this.handleHitCalculation(index, 0, damageValue, false);
 					});
+					const cancelBtn = buttonRow.createEl("button", {
+						cls: "hit-calculate-btn",
+						text: "Cancel"
+					});
+					cancelBtn.addEventListener("click", () => {
+						char.hitExpanded = false;
+						this.render();
+					});
 				}
 			} else if (char.type === 'robot') {
 				const statsEl = cardEl.createEl("div", { cls: "character-stats" });
@@ -1411,6 +1246,16 @@ class CombatTrackerView extends ItemView {
 				const actionRow = cardEl.createEl("div", { cls: "character-action-row" });
 				const hitBtn = actionRow.createEl("button", { cls: "action-btn", text: "Hit" });
 				hitBtn.addEventListener("click", () => this.handleHit(index));
+				
+				// Stun toggle button
+				const stunBtn = actionRow.createEl("button", {
+					cls: "action-btn" + (char.isStunned ? " stunned-on" : ""),
+					text: "Stun"
+				});
+				stunBtn.addEventListener("click", () => {
+					char.isStunned = !char.isStunned;
+					this.render();
+				});
 				
 				// Shots control buttons
 				const btn1 = actionRow.createEl("button", { cls: "action-btn", text: "-1" });
@@ -1467,16 +1312,16 @@ class CombatTrackerView extends ItemView {
 					const expandedStats = expandedEl.createEl("div", { cls: "character-stats" });
 					this.createStat(expandedStats, "Head SP", char.headSp?.toString() || "");
 					this.createStat(expandedStats, "Torso SP", char.torsoSp?.toString() || "");
-					this.createStat(expandedStats, "Right Arm SP", char.rightArmSp?.toString() || "");
-					this.createStat(expandedStats, "Left Arm SP", char.leftArmSp?.toString() || "");
-					this.createStat(expandedStats, "Right Leg SP", char.rightLegSp?.toString() || "");
-					this.createStat(expandedStats, "Left Leg SP", char.leftLegSp?.toString() || "");
-					this.createStat(expandedStats, "Head DMG Taken", char.headDmgTaken?.toString() || "");
-					this.createStat(expandedStats, "Torso DMG Taken", char.torsoDmgTaken?.toString() || "");
-					this.createStat(expandedStats, "Right Arm DMG Taken", char.rightArmDmgTaken?.toString() || "");
-					this.createStat(expandedStats, "Left Arm DMG Taken", char.leftArmDmgTaken?.toString() || "");
-					this.createStat(expandedStats, "Right Leg DMG Taken", char.rightLegDmgTaken?.toString() || "");
-					this.createStat(expandedStats, "Left Leg DMG Taken", char.leftLegDmgTaken?.toString() || "");
+					this.createStat(expandedStats, "Right arm SP", char.rightArmSp?.toString() || "");
+					this.createStat(expandedStats, "Left arm SP", char.leftArmSp?.toString() || "");
+					this.createStat(expandedStats, "Right leg SP", char.rightLegSp?.toString() || "");
+					this.createStat(expandedStats, "Left leg SP", char.leftLegSp?.toString() || "");
+					this.createStat(expandedStats, "Head DMG taken", char.headDmgTaken?.toString() || "");
+					this.createStat(expandedStats, "Torso DMG taken", char.torsoDmgTaken?.toString() || "");
+					this.createStat(expandedStats, "Right arm DMG taken", char.rightArmDmgTaken?.toString() || "");
+					this.createStat(expandedStats, "Left arm DMG taken", char.leftArmDmgTaken?.toString() || "");
+					this.createStat(expandedStats, "Right leg DMG taken", char.rightLegDmgTaken?.toString() || "");
+					this.createStat(expandedStats, "Left leg DMG taken", char.leftLegDmgTaken?.toString() || "");
 					this.createStat(expandedStats, "# of Shots", char.numShots?.toString() || "");
 					this.createStat(expandedStats, "# of Shots MAX", char.numShotsMax?.toString() || "");
 					this.createStat(expandedStats, "Mags", char.mags?.toString() || "");
@@ -1490,7 +1335,7 @@ class CombatTrackerView extends ItemView {
 					
 					// Location Roll input for robots
 					const locationRow = hitForm.createEl("div", { cls: "hit-row" });
-					locationRow.createEl("label", { text: "Location Roll:" });
+					locationRow.createEl("label", { text: "Location roll:" });
 					const locationInput = locationRow.createEl("input", {
 						cls: "hit-input",
 						attr: { type: "number", min: "0", max: "9", step: "1" }
@@ -1507,8 +1352,10 @@ class CombatTrackerView extends ItemView {
 					// Error message container
 					const errorContainer = hitForm.createEl("div", { cls: "hit-error" });
 					
-					// Calculate button
-					const calculateBtn = hitForm.createEl("button", {
+					// Calculate and Cancel buttons in a row
+					const buttonRow = hitForm.createEl("div");
+					buttonRow.setAttr("style", "display: flex; gap: 10px; margin-top: 10px;");
+					const calculateBtn = buttonRow.createEl("button", {
 						cls: "hit-calculate-btn",
 						text: "Calculate"
 					});
@@ -1524,6 +1371,14 @@ class CombatTrackerView extends ItemView {
 						
 						this.handleHitCalculation(index, locationValue, damageValue, false);
 					});
+					const cancelBtn = buttonRow.createEl("button", {
+						cls: "hit-calculate-btn",
+						text: "Cancel"
+					});
+					cancelBtn.addEventListener("click", () => {
+						char.hitExpanded = false;
+						this.render();
+					});
 				}
 			} else if (char.notification && char.notification !== "None") {
 				const notificationEl = cardEl.createEl("div", { cls: "character-notification" });
@@ -1537,7 +1392,7 @@ class CombatTrackerView extends ItemView {
 		statEl.createEl("span", { text: `${label}: ` });
 
 		// List of stats that should never be editable
-		const readOnlyStats = ["Wound State", "Save Stun Penalty", "Death Save Penalty", "Skill Penalty", "Condition"];
+		const readOnlyStats = ["Wound state", "Save stun penalty", "Death save penalty", "Skill penalty", "Condition"];
 		const isReadOnlyStat = readOnlyStats.includes(label);
 
 		// Find the character this stat belongs to by looking at its container hierarchy
