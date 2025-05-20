@@ -169,7 +169,6 @@ class EditView extends ItemView {
 		});
 		saveBtn.addEventListener("click", () => {
 			this.onSave(this.character);
-			this.leaf.detach();
 		});
 	}
 
@@ -576,11 +575,6 @@ class CombatTrackerView extends ItemView {
 				this.characters.unshift(newChar);
 				this.sortByInit();
 				this.render();
-				
-				this.leaf.setViewState({
-					type: VIEW_TYPE_COMBAT_TRACKER,
-					active: true
-				});
 			});
 
 			// Pre-fill the form with provided parameters
@@ -619,10 +613,6 @@ class CombatTrackerView extends ItemView {
 					this.sortByInit();
 					this.render();
 				}
-				this.leaf.setViewState({
-					type: VIEW_TYPE_COMBAT_TRACKER,
-					active: true
-				});
 			});
 			await leaf.open(editView);
 		}

@@ -207,11 +207,6 @@ export class CombatTrackerView extends ItemView {
                 this.characters.unshift(newChar);
                 this.sortByInit();
                 this.render();
-                
-                this.leaf.setViewState({
-                    type: "cyberpunk-combat-tracker-view",
-                    active: true
-                });
             });
 
             // Pre-fill the form with provided parameters
@@ -250,10 +245,6 @@ export class CombatTrackerView extends ItemView {
                     this.sortByInit();
                     this.render();
                 }
-                this.leaf.setViewState({
-                    type: "cyberpunk-combat-tracker-view",
-                    active: true
-                });
             });
             await leaf.open(editView);
         }
