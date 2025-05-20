@@ -346,163 +346,130 @@ export class CombatTrackerView extends ItemView {
         this.render();
     }
 
-    private handleHitCalculation(index: number, locationRoll: number, damage: number, isFace: boolean) {
+    private handleHitCalculation(index: number, locationRoll: number, damage: number, isFace: boolean, spMinus2: boolean, bypassSp: boolean, destroySp: boolean, spMultiplier: number = 1, dmgMultiplier: number = 1) {
         const char = this.characters[index];
         
         if (char.type === 'drone') {
-            // Drone hit calculation
             const spValue = char.sp;
             if (spValue === undefined) return;
+            let finalDamage = damage;
 
-            // Reduce damage by SP
-            let finalDamage = Math.max(0, damage - spValue);
-            
-            // If damage equals or exceeds SP, reduce SP by 1
-            if (damage >= spValue) {
-                char.sp = Math.max(0, spValue - 1);
+            if (destroySp) {
+                // Destroy SP: reduce SP by the full damage amount (no multiplier)
+                char.sp = Math.max(0, spValue - damage);
+                // Damage reduction uses SP multiplier
+                const effectiveSP = spValue * spMultiplier;
+                finalDamage = Math.max(0, damage - effectiveSP);
+            } else if (!bypassSp) {
+                // Normal SP reduction with multiplier
+                const effectiveSP = spValue * spMultiplier;
+                finalDamage = Math.max(0, damage - effectiveSP);
+                // If damage >= SP, reduce SP by 1 or 2 (no multiplier)
+                if (damage >= spValue) {
+                    char.sp = Math.max(0, spValue - (spMinus2 ? 2 : 1));
+                }
             }
+            // Apply DMG multiplier
+            finalDamage = finalDamage * dmgMultiplier;
+            // No BTM for drones
+            finalDamage = Math.max(0, Math.round(finalDamage));
 
-            // Update DMG Taken
             if (char.dmgTaken !== undefined) {
                 char.dmgTaken += finalDamage;
             }
-
-            // Update condition based on damage
             if (char.sdp !== undefined) {
                 char.condition = getDroneCondition(char.dmgTaken || 0, char.sdp);
             }
-
-            // Close hit section
             char.hitExpanded = false;
             this.render();
             return;
         } else if (char.type === 'robot') {
-            // Get hit location
             let hitLocation = getHitLocation(locationRoll);
             let dmgLocation: keyof Character;
-            
-            // Map SP location to corresponding DMG Taken location
             switch (hitLocation) {
-                case 'headSp':
-                    dmgLocation = 'headDmgTaken';
-                    break;
-                case 'torsoSp':
-                    dmgLocation = 'torsoDmgTaken';
-                    break;
-                case 'rightArmSp':
-                    dmgLocation = 'rightArmDmgTaken';
-                    break;
-                case 'leftArmSp':
-                    dmgLocation = 'leftArmDmgTaken';
-                    break;
-                case 'rightLegSp':
-                    dmgLocation = 'rightLegDmgTaken';
-                    break;
-                case 'leftLegSp':
-                    dmgLocation = 'leftLegDmgTaken';
-                    break;
-                default:
-                    return;
+                case 'headSp': dmgLocation = 'headDmgTaken'; break;
+                case 'torsoSp': dmgLocation = 'torsoDmgTaken'; break;
+                case 'rightArmSp': dmgLocation = 'rightArmDmgTaken'; break;
+                case 'leftArmSp': dmgLocation = 'leftArmDmgTaken'; break;
+                case 'rightLegSp': dmgLocation = 'rightLegDmgTaken'; break;
+                case 'leftLegSp': dmgLocation = 'leftLegDmgTaken'; break;
+                default: return;
             }
-            
-            // Get the SP value for the hit location (default to 12 if undefined)
             const spValue = char[hitLocation] as number ?? 12;
-            
-            // Reduce damage by SP (no BTM reduction for robots)
-            let finalDamage = Math.max(0, damage - spValue);
-            
-            // If damage equals or exceeds SP, reduce SP by 1
-            if (damage >= spValue) {
-                (char[hitLocation] as number) = Math.max(0, spValue - 1);
+            let finalDamage = damage;
+
+            if (destroySp) {
+                (char[hitLocation] as number) = Math.max(0, spValue - damage);
+                const effectiveSP = spValue * spMultiplier;
+                finalDamage = Math.max(0, damage - effectiveSP);
+            } else if (!bypassSp) {
+                const effectiveSP = spValue * spMultiplier;
+                finalDamage = Math.max(0, damage - effectiveSP);
+                if (damage >= spValue) {
+                    (char[hitLocation] as number) = Math.max(0, spValue - (spMinus2 ? 2 : 1));
+                }
             }
-            
-            // Update the corresponding DMG Taken value
+            // Apply DMG multiplier
+            finalDamage = finalDamage * dmgMultiplier;
+            finalDamage = Math.max(0, Math.round(finalDamage));
+
             if (char[dmgLocation] !== undefined) {
                 (char[dmgLocation] as number) += finalDamage;
-                
-                // Get the part name from the location
                 const partName = hitLocation.replace('Sp', '').split(/(?=[A-Z])/).join('').toLowerCase();
-                
-                // Check for status updates
                 const status = getRobotPartStatus((char[dmgLocation] as number), partName);
-                
-                // Update notifications
                 if (status) {
-                    // Initialize notifications array if it doesn't exist
-                    if (!char.notifications) {
-                        char.notifications = [];
-                    }
-                    
-                    // Remove any existing notifications for this part
+                    if (!char.notifications) char.notifications = [];
                     char.notifications = char.notifications.filter(n => !n.toLowerCase().includes(partName));
-                    
-                    // Add the new notification
                     char.notifications.push(status);
                 }
             }
-            
-            // Close hit section
             char.hitExpanded = false;
             this.render();
             return;
         }
-        
-        // Original mook hit calculation
-        // Step 1: Get hit location
+        // Mook
         let hitLocation = getHitLocation(locationRoll);
-        
-        // Step 2: Check for face hit
-        if (hitLocation === "headSp" && isFace) {
-            hitLocation = "faceSp";
-        }
-        
-        // Get the SP value for the hit location
+        if (hitLocation === "headSp" && isFace) hitLocation = "faceSp";
         const spValue = char[hitLocation] as number;
         if (spValue === undefined) return;
-        
-        // Step 3: Reduce damage by SP
-        let finalDamage = damage - spValue;
-        
-        // Step 4: Reduce SP by 1 if damage equals or exceeds SP
-        if (damage >= spValue) {
-            (char[hitLocation] as number) = Math.max(0, spValue - 1);
+        let finalDamage = damage;
+        if (destroySp) {
+            (char[hitLocation] as number) = Math.max(0, spValue - damage);
+            const effectiveSP = spValue * spMultiplier;
+            finalDamage = Math.max(0, damage - effectiveSP);
+        } else if (!bypassSp) {
+            const effectiveSP = spValue * spMultiplier;
+            finalDamage = Math.max(0, damage - effectiveSP);
+            if (damage >= spValue) {
+                (char[hitLocation] as number) = Math.max(0, spValue - (spMinus2 ? 2 : 1));
+            }
         }
-        
         // If damage is reduced to 0 by SP, close hit section and return
-        // Note: we check for finalDamage <= 0 here, before BTM is applied
         if (finalDamage <= 0) {
             char.hitExpanded = false;
             this.render();
             return;
         }
-        
-        // Step 5: Double damage for head hits
+        // Head/face hit multiplier
         if (hitLocation === "headSp" || hitLocation === "faceSp") {
             finalDamage *= 2;
         }
-        
-        // Step 6: Add BTM
+        // Apply DMG multiplier
+        finalDamage = finalDamage * dmgMultiplier;
+        // Add BTM after DMG multiplier
         if (char.btm !== undefined) {
             finalDamage += char.btm;
         }
-        
-        // Step 7: Minimum damage is 1 (only if damage wasn't reduced to 0 by SP)
-        finalDamage = Math.max(1, finalDamage);
-        
-        // Step 8: Update Last DMG and DMG Taken
+        // Minimum damage is 1 (if not reduced to 0 by SP)
+        finalDamage = Math.max(1, Math.round(finalDamage));
         char.lastDmg = finalDamage;
         if (char.dmgTaken !== undefined) {
             char.dmgTaken += finalDamage;
         }
-        
-        // Step 9: Close hit section
         char.hitExpanded = false;
-        
-        // Step 10: Update notification and handle special cases
         if (finalDamage >= 8) {
             if (hitLocation === "headSp" || hitLocation === "faceSp") {
                 char.notification = "Dead!";
-                // Set DMG Taken to 99 when notification is "Dead!"
                 char.dmgTaken = 99;
             } else {
                 char.notification = "Dismemberment!";
@@ -515,8 +482,6 @@ export class CombatTrackerView extends ItemView {
                 char.notification = "Roll Death Save";
             }
         }
-        
-        // Update wound state and penalties
         this.handleDmgChange(index, (char.dmgTaken || 0).toString());
     }
 
@@ -549,9 +514,8 @@ export class CombatTrackerView extends ItemView {
         const listEl = container.createEl("div", { cls: "combat-tracker-list" });
 
         this.characters.forEach((char, index) => {
-            const cardEl = listEl.createEl("div", {
-                cls: `character-card${char.isHighlighted ? " highlighted" : ""}`
-            });
+            const cardClasses = `character-card${char.isHighlighted ? " highlighted" : ""}${char.statusEffect ? " status-effect-on" : ""}`;
+            const cardEl = listEl.createEl("div", { cls: cardClasses });
             
             const headerEl = cardEl.createEl("div", { cls: "character-header" });
             
@@ -672,27 +636,118 @@ export class CombatTrackerView extends ItemView {
                     this.createStat(expandedStats, "Death save", char.deathSave?.toString() || "");
                     this.createStat(expandedStats, "Death save penalty", char.deathSavePenalty?.toString() || "");
                     this.createStat(expandedStats, "# of Shots MAX", char.numShotsMax?.toString() || "");
+                    // New row for Turns left and Status effect
+                    const extraRow = expandedStats.createEl("div", { cls: "character-stat" });
+                    // Status effect checkbox first
+                    const statusCheckbox = extraRow.createEl("input", { attr: { type: "checkbox" } });
+                    statusCheckbox.checked = !!char.statusEffect;
+                    statusCheckbox.addEventListener("change", () => {
+                        char.statusEffect = statusCheckbox.checked;
+                        this.render();
+                    });
+                    const statusLabel = extraRow.createEl("label", { text: "Status effect:" });
+                    statusLabel.style.marginLeft = "4px";
+                    statusLabel.style.marginRight = "12px";
+                    // Turns left
+                    extraRow.createEl("span", { text: "Turns left:" });
+                    const turnsInput = extraRow.createEl("input", {
+                        cls: "stat-input",
+                        attr: { type: "number", min: "0", step: "1", value: char.turnsLeft?.toString() || "0" }
+                    });
+                    turnsInput.addEventListener("change", (e) => {
+                        char.turnsLeft = Math.max(0, Math.floor(Number((e.target as HTMLInputElement).value)));
+                        this.render();
+                    });
                 }
                 if (char.hitExpanded) {
                     const hitEl = cardEl.createEl("div", { cls: "character-expanded" });
                     hitEl.createEl("hr");
                     const hitForm = hitEl.createEl("div", { cls: "hit-form" });
-                    const locationRow = hitForm.createEl("div", { cls: "hit-row" });
-                    locationRow.createEl("label", { text: "Location roll:" });
-                    const locationInput = locationRow.createEl("input", {
+                    // Create a flex row for the two main columns
+                    const inputRow = hitForm.createEl("div", { cls: "hit-input-row" });
+                    inputRow.setAttr("style", "display: flex; gap: 32px; align-items: flex-start;");
+                    // Left column: Location, checkboxes, SP radios
+                    const leftCol = inputRow.createEl("div", { cls: "hit-col" });
+                    // Location roll label/input
+                    const locationLabelRow = leftCol.createEl("div", { cls: "hit-row" });
+                    locationLabelRow.setAttr("style", "display: flex; align-items: center; margin-bottom: 8px;");
+                    locationLabelRow.createEl("label", { text: "Location roll:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const locationInput = locationLabelRow.createEl("input", {
                         cls: "hit-input",
                         attr: { type: "number", min: "0", max: "9", step: "1" }
                     });
-                    const damageRow = hitForm.createEl("div", { cls: "hit-row" });
-                    damageRow.createEl("label", { text: "Damage:" });
-                    const damageInput = damageRow.createEl("input", {
+                    // Checkboxes
+                    const faceRow = leftCol.createEl("div", { cls: "hit-row" });
+                    faceRow.setAttr("style", "margin-top: 8px;");
+                    faceRow.createEl("label", { text: "Face hit:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const faceCheckbox = faceRow.createEl("input", { attr: { type: "checkbox" } });
+                    const spMinus2Row = leftCol.createEl("div", { cls: "hit-row" });
+                    spMinus2Row.setAttr("style", "margin-top: 8px;");
+                    spMinus2Row.createEl("label", { text: "SP -2:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const spMinus2Checkbox = spMinus2Row.createEl("input", { attr: { type: "checkbox" } });
+                    const bypassSpRow = leftCol.createEl("div", { cls: "hit-row" });
+                    bypassSpRow.setAttr("style", "margin-top: 8px;");
+                    bypassSpRow.createEl("label", { text: "Bypass SP:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const bypassSpCheckbox = bypassSpRow.createEl("input", { attr: { type: "checkbox" } });
+                    const destroySpRow = leftCol.createEl("div", { cls: "hit-row" });
+                    destroySpRow.setAttr("style", "margin-top: 8px;");
+                    destroySpRow.createEl("label", { text: "Destroy SP:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const destroySpCheckbox = destroySpRow.createEl("input", { attr: { type: "checkbox" } });
+                    // SP Multiplier radio buttons
+                    const spRadioCol = leftCol.createEl("div", { cls: "hit-radio-col" });
+                    spRadioCol.setAttr("style", "margin-top: 8px;");
+                    const spMultipliers = [
+                        { label: "SPx1:", value: 1 },
+                        { label: "SPx1/2:", value: 0.5 },
+                        { label: "SPx1/3:", value: 1/3 },
+                        { label: "SPx2/3:", value: 2/3 },
+                        { label: "SPx1/4:", value: 0.25 },
+                        { label: "SPx2:", value: 2 },
+                        { label: "SPx3:", value: 3 }
+                    ];
+                    let selectedSpMultiplier = 1;
+                    spMultipliers.forEach((opt, i) => {
+                        const row = spRadioCol.createEl("div", { cls: "hit-row" });
+                        row.createEl("label", { text: opt.label, cls: "hit-label" });
+                        const radio = row.createEl("input", {
+                            attr: { type: "radio", name: `sp-multiplier-${index}`, value: opt.value }
+                        });
+                        if (i === 0) radio.checked = true;
+                        radio.addEventListener("change", () => {
+                            if (radio.checked) selectedSpMultiplier = opt.value;
+                        });
+                    });
+                    // Right column: Damage label/input, DMG radios
+                    const rightCol = inputRow.createEl("div", { cls: "hit-col" });
+                    // Damage label/input at the top
+                    const damageLabelRow = rightCol.createEl("div", { cls: "hit-row" });
+                    damageLabelRow.setAttr("style", "display: flex; align-items: center; margin-bottom: 8px;");
+                    damageLabelRow.createEl("label", { text: "Damage:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const damageInput = damageLabelRow.createEl("input", {
                         cls: "hit-input",
                         attr: { type: "number", min: "1", step: "1" }
                     });
-                    const faceRow = hitForm.createEl("div", { cls: "hit-row" });
-                    const faceLabel = faceRow.createEl("label", { text: "Face:" });
-                    const faceCheckbox = faceRow.createEl("input", {
-                        attr: { type: "checkbox" }
+                    // DMG Multiplier radio buttons
+                    const dmgRadioCol = rightCol.createEl("div", { cls: "hit-radio-col" });
+                    const dmgMultipliers = [
+                        { label: "DMGx1:", value: 1 },
+                        { label: "DMGx1/4:", value: 0.25 },
+                        { label: "DMGx1/2:", value: 0.5 },
+                        { label: "DMGx1.5:", value: 1.5 },
+                        { label: "DMGx2:", value: 2 },
+                        { label: "DMGx3:", value: 3 }
+                    ];
+                    let selectedDmgMultiplier = 1;
+                    dmgMultipliers.forEach((opt, i) => {
+                        const row = dmgRadioCol.createEl("div", { cls: "hit-row" });
+                        row.createEl("label", { text: opt.label, cls: "hit-label" });
+                        const radio = row.createEl("input", {
+                            attr: { type: "radio", name: `dmg-multiplier-${index}`, value: opt.value }
+                        });
+                        if (i === 0) radio.checked = true;
+                        radio.addEventListener("change", () => {
+                            if (radio.checked) selectedDmgMultiplier = opt.value;
+                        });
                     });
                     const errorContainer = hitForm.createEl("div", { cls: "hit-error" });
                     const buttonRow = hitForm.createEl("div");
@@ -709,7 +764,7 @@ export class CombatTrackerView extends ItemView {
                             errorContainer.addClass("error-message");
                             return;
                         }
-                        this.handleHitCalculation(index, locationValue, damageValue, faceCheckbox.checked);
+                        this.handleHitCalculation(index, locationValue, damageValue, faceCheckbox.checked, spMinus2Checkbox.checked, bypassSpCheckbox.checked, destroySpCheckbox.checked, selectedSpMultiplier, selectedDmgMultiplier);
                     });
                     const cancelBtn = buttonRow.createEl("button", {
                         cls: "hit-calculate-btn",
@@ -792,7 +847,7 @@ export class CombatTrackerView extends ItemView {
                             errorContainer.addClass("error-message");
                             return;
                         }
-                        this.handleHitCalculation(index, 0, damageValue, false);
+                        this.handleHitCalculation(index, 0, damageValue, false, false, false, false);
                     });
                     const cancelBtn = buttonRow.createEl("button", {
                         cls: "hit-calculate-btn",
@@ -881,17 +936,91 @@ export class CombatTrackerView extends ItemView {
                     const hitEl = cardEl.createEl("div", { cls: "character-expanded" });
                     hitEl.createEl("hr");
                     const hitForm = hitEl.createEl("div", { cls: "hit-form" });
-                    const locationRow = hitForm.createEl("div", { cls: "hit-row" });
-                    locationRow.createEl("label", { text: "Location roll:" });
-                    const locationInput = locationRow.createEl("input", {
+                    // Create a flex row for the two main columns
+                    const inputRow = hitForm.createEl("div", { cls: "hit-input-row" });
+                    inputRow.setAttr("style", "display: flex; gap: 32px; align-items: flex-start;");
+                    // Left column: Location, checkboxes, SP radios
+                    const leftCol = inputRow.createEl("div", { cls: "hit-col" });
+                    // Location roll label/input
+                    const locationLabelRow = leftCol.createEl("div", { cls: "hit-row" });
+                    locationLabelRow.setAttr("style", "display: flex; align-items: center; margin-bottom: 8px;");
+                    locationLabelRow.createEl("label", { text: "Location roll:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const locationInput = locationLabelRow.createEl("input", {
                         cls: "hit-input",
                         attr: { type: "number", min: "0", max: "9", step: "1" }
                     });
-                    const damageRow = hitForm.createEl("div", { cls: "hit-row" });
-                    damageRow.createEl("label", { text: "Damage:" });
-                    const damageInput = damageRow.createEl("input", {
+                    // Checkboxes
+                    const faceRow = leftCol.createEl("div", { cls: "hit-row" });
+                    faceRow.setAttr("style", "margin-top: 8px;");
+                    faceRow.createEl("label", { text: "Face hit:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const faceCheckbox = faceRow.createEl("input", { attr: { type: "checkbox" } });
+                    const spMinus2Row = leftCol.createEl("div", { cls: "hit-row" });
+                    spMinus2Row.setAttr("style", "margin-top: 8px;");
+                    spMinus2Row.createEl("label", { text: "SP -2:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const spMinus2Checkbox = spMinus2Row.createEl("input", { attr: { type: "checkbox" } });
+                    const bypassSpRow = leftCol.createEl("div", { cls: "hit-row" });
+                    bypassSpRow.setAttr("style", "margin-top: 8px;");
+                    bypassSpRow.createEl("label", { text: "Bypass SP:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const bypassSpCheckbox = bypassSpRow.createEl("input", { attr: { type: "checkbox" } });
+                    const destroySpRow = leftCol.createEl("div", { cls: "hit-row" });
+                    destroySpRow.setAttr("style", "margin-top: 8px;");
+                    destroySpRow.createEl("label", { text: "Destroy SP:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const destroySpCheckbox = destroySpRow.createEl("input", { attr: { type: "checkbox" } });
+                    // SP Multiplier radio buttons
+                    const spRadioCol = leftCol.createEl("div", { cls: "hit-radio-col" });
+                    spRadioCol.setAttr("style", "margin-top: 8px;");
+                    const spMultipliers = [
+                        { label: "SPx1:", value: 1 },
+                        { label: "SPx1/2:", value: 0.5 },
+                        { label: "SPx1/3:", value: 1/3 },
+                        { label: "SPx2/3:", value: 2/3 },
+                        { label: "SPx1/4:", value: 0.25 },
+                        { label: "SPx2:", value: 2 },
+                        { label: "SPx3:", value: 3 }
+                    ];
+                    let selectedSpMultiplier = 1;
+                    spMultipliers.forEach((opt, i) => {
+                        const row = spRadioCol.createEl("div", { cls: "hit-row" });
+                        row.createEl("label", { text: opt.label, cls: "hit-label" });
+                        const radio = row.createEl("input", {
+                            attr: { type: "radio", name: `sp-multiplier-${index}`, value: opt.value }
+                        });
+                        if (i === 0) radio.checked = true;
+                        radio.addEventListener("change", () => {
+                            if (radio.checked) selectedSpMultiplier = opt.value;
+                        });
+                    });
+                    // Right column: Damage label/input, DMG radios
+                    const rightCol = inputRow.createEl("div", { cls: "hit-col" });
+                    // Damage label/input at the top
+                    const damageLabelRow = rightCol.createEl("div", { cls: "hit-row" });
+                    damageLabelRow.setAttr("style", "display: flex; align-items: center; margin-bottom: 8px;");
+                    damageLabelRow.createEl("label", { text: "Damage:", cls: "hit-label", attr: { style: "margin-right:8px;" } });
+                    const damageInput = damageLabelRow.createEl("input", {
                         cls: "hit-input",
                         attr: { type: "number", min: "1", step: "1" }
+                    });
+                    // DMG Multiplier radio buttons
+                    const dmgRadioCol = rightCol.createEl("div", { cls: "hit-radio-col" });
+                    const dmgMultipliers = [
+                        { label: "DMGx1:", value: 1 },
+                        { label: "DMGx1/4:", value: 0.25 },
+                        { label: "DMGx1/2:", value: 0.5 },
+                        { label: "DMGx1.5:", value: 1.5 },
+                        { label: "DMGx2:", value: 2 },
+                        { label: "DMGx3:", value: 3 }
+                    ];
+                    let selectedDmgMultiplier = 1;
+                    dmgMultipliers.forEach((opt, i) => {
+                        const row = dmgRadioCol.createEl("div", { cls: "hit-row" });
+                        row.createEl("label", { text: opt.label, cls: "hit-label" });
+                        const radio = row.createEl("input", {
+                            attr: { type: "radio", name: `dmg-multiplier-${index}`, value: opt.value }
+                        });
+                        if (i === 0) radio.checked = true;
+                        radio.addEventListener("change", () => {
+                            if (radio.checked) selectedDmgMultiplier = opt.value;
+                        });
                     });
                     const errorContainer = hitForm.createEl("div", { cls: "hit-error" });
                     const buttonRow = hitForm.createEl("div");
@@ -908,7 +1037,7 @@ export class CombatTrackerView extends ItemView {
                             errorContainer.addClass("error-message");
                             return;
                         }
-                        this.handleHitCalculation(index, locationValue, damageValue, false);
+                        this.handleHitCalculation(index, locationValue, damageValue, faceCheckbox.checked, spMinus2Checkbox.checked, bypassSpCheckbox.checked, destroySpCheckbox.checked, selectedSpMultiplier, selectedDmgMultiplier);
                     });
                     const cancelBtn = buttonRow.createEl("button", {
                         cls: "hit-calculate-btn",

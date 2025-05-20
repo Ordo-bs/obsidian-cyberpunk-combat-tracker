@@ -59,6 +59,9 @@ export interface Character {
 	notifications?: string[];
 	// Stun toggle
 	isStunned?: boolean;
+	// New: status effect and turns left
+	turnsLeft?: number;
+	statusEffect?: boolean;
 }
 
 export {};

@@ -55,9 +55,9 @@ export default class CyberpunkStatBlocks extends Plugin {
         } catch (error) {
             console.error('Error accessing combat tracker view:', error);
             new Notice('Error accessing combat tracker view');
-            return null;
-        }
-    }
+		return null;
+	}
+}
 
 	async onload() {
 		// Register custom icons
@@ -168,7 +168,7 @@ export default class CyberpunkStatBlocks extends Plugin {
 				leaf = newLeaf;
 			}
 		}
-		
+
 		if (leaf) {
 			workspace.revealLeaf(leaf);
 			// Wait for the view to be ready
