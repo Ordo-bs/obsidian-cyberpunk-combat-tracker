@@ -305,6 +305,9 @@ export class CombatTrackerView extends ItemView {
         if (char.type === 'mook') {
             const newWoundState = getWoundStateFromDmg(dmgTaken);
             char.woundState = newWoundState;
+            char.saveStunPenalty = getStunPenaltyFromWoundState(newWoundState);
+            char.deathSavePenalty = getDeathPenaltyFromWoundState(newWoundState);
+            char.skillPenalty = getSkillPenaltyFromWoundState(newWoundState);
             if (["Light", "Serious", "Critical"].includes(newWoundState)) {
                 char.notification = "Roll Stun Save";
             } else if (["Mortal 0", "Mortal 1", "Mortal 2", "Mortal 3", "Mortal 4", "Mortal 5", "Mortal 6", "Dead"].includes(newWoundState)) {
@@ -580,9 +583,9 @@ export class CombatTrackerView extends ItemView {
             });
             expandBtn.addEventListener("click", () => {
                 char.expanded = !char.expanded;
-                char.hitExpanded = false;
-                this.updateSingleCard(index);
-            });
+                    char.hitExpanded = false;
+                    this.updateSingleCard(index);
+                });
             if (char.expanded) {
                 const expandedEl = cardEl.createEl("div", { cls: "character-expanded" });
                 expandedEl.createEl("hr");
@@ -617,7 +620,7 @@ export class CombatTrackerView extends ItemView {
         this.updateSingleCard(index);
     }
 
-    private handleHitCalculation(index: number, locationRoll: number, damage: number, isFace: boolean, spMinus2: boolean, bypassSp: boolean, destroySp: boolean, spMultiplier: number = 1, dmgMultiplier: number = 1) {
+    private handleHitCalculation(index: number, locationRoll: number, damage: number, isFace: boolean, spMinus2: boolean, bypassSp: boolean, destroySp: boolean, spMultiplier: number = 1, dmgMultiplier: number = 1, hitType: string = "lethal") {
         const char = this.characters[index];
         
         if (char.type === 'drone') {
@@ -733,6 +736,48 @@ export class CombatTrackerView extends ItemView {
         }
         // Minimum damage is 1 (if not reduced to 0 by SP)
         finalDamage = Math.max(1, Math.round(finalDamage));
+
+        // Handle different hit types
+        if (hitType === "non-lethal") {
+            // For non-lethal hits, calculate potential damage but don't apply it
+            // Calculate hypothetical total damage
+            const hypotheticalTotalDamage = (char.dmgTaken || 0) + finalDamage;
+            // Get hypothetical wound state
+            const hypotheticalWoundState = getWoundStateFromDmg(hypotheticalTotalDamage);
+            // Get hypothetical Stun penalty
+            const hypotheticalStunPenalty = getStunPenaltyFromWoundState(hypotheticalWoundState);
+            // Calculate hypothetical Stun value
+            const hypotheticalStun = (char.stun || 0) + hypotheticalStunPenalty;
+            // Show notification with hypothetical Stun value
+            char.notification = `Roll Stun Save (Stun: ${hypotheticalStun})`;
+            char.hitExpanded = false;
+            this.updateSingleCard(index);
+            return;
+        } else if (hitType === "half-and-half") {
+            // Calculate hypothetical values for Stun save (using full damage)
+            const hypotheticalTotalDamage = (char.dmgTaken || 0) + finalDamage;
+            const hypotheticalWoundState = getWoundStateFromDmg(hypotheticalTotalDamage);
+            const hypotheticalStunPenalty = getStunPenaltyFromWoundState(hypotheticalWoundState);
+            const hypotheticalStun = (char.stun || 0) + hypotheticalStunPenalty;
+            
+            // Apply half of the calculated damage
+            const halfDamage = Math.max(1, Math.round(finalDamage / 2));
+            char.lastDmg = halfDamage;
+            if (char.dmgTaken !== undefined) {
+                char.dmgTaken += halfDamage;
+            }
+            
+            // Update damage and stats first
+            this.handleDmgChange(index, (char.dmgTaken || 0).toString());
+            
+            // Then set the notification with the full hypothetical Stun value
+            char.notification = `Roll Stun Save (Stun: ${hypotheticalStun})`;
+            char.hitExpanded = false;
+            this.updateSingleCard(index);
+            return;
+        }
+
+        // For lethal hits (default), proceed with normal damage application
         char.lastDmg = finalDamage;
         if (char.dmgTaken !== undefined) {
             char.dmgTaken += finalDamage;
@@ -1025,6 +1070,27 @@ export class CombatTrackerView extends ItemView {
                 if (radio.checked) selectedDmgMultiplier = opt.value;
             });
         });
+        // --- New Hit Type radio group ---
+        const hitTypeRadioCol = rightCol.createEl("div", { cls: "hit-radio-col" });
+        hitTypeRadioCol.setAttr("style", "margin-top: 8px;");
+        const hitTypes = [
+            { label: "Lethal", value: "lethal" },
+            { label: "Non-lethal", value: "non-lethal" },
+            { label: "Half-and-half", value: "half-and-half" }
+        ];
+        let selectedHitType = "lethal";
+        hitTypes.forEach((opt, i) => {
+            const row = hitTypeRadioCol.createEl("div", { cls: "hit-row" });
+            row.createEl("label", { text: opt.label, cls: "hit-label" });
+            const radio = row.createEl("input", {
+                attr: { type: "radio", name: `hit-type-${index}`, value: opt.value }
+            });
+            if (i === 0) radio.checked = true;
+            radio.addEventListener("change", () => {
+                if (radio.checked) selectedHitType = opt.value;
+            });
+        });
+        // --- End new group ---
         const errorContainer = hitForm.createEl("div", { cls: "hit-error" });
         const buttonRow = hitForm.createEl("div");
         buttonRow.setAttr("style", "display: flex; gap: 10px; margin-top: 10px;");
@@ -1040,7 +1106,8 @@ export class CombatTrackerView extends ItemView {
                 errorContainer.addClass("error-message");
                 return;
             }
-            this.handleHitCalculation(index, locationValue, damageValue, faceCheckbox.checked, spMinus2Checkbox.checked, bypassSpCheckbox.checked, destroySpCheckbox.checked, selectedSpMultiplier, selectedDmgMultiplier);
+            // Pass selectedHitType to calculation logic (not used yet)
+            this.handleHitCalculation(index, locationValue, damageValue, faceCheckbox.checked, spMinus2Checkbox.checked, bypassSpCheckbox.checked, destroySpCheckbox.checked, selectedSpMultiplier, selectedDmgMultiplier, selectedHitType);
         });
         const cancelBtn = buttonRow.createEl("button", {
             cls: "hit-calculate-btn",
